@@ -9,6 +9,7 @@
 }
 .columns-scroll {
   overflow-x: auto;
+  overflow-anchor: none;
   background: var(--surface-2);
   border-right: 1px solid var(--line);
 }
@@ -31,8 +32,8 @@
   /* Override individual col translateX — the parent .columns-inner handles the slide */
 }
 @keyframes col-enter {
-  from { opacity: 0; transform: translateX(-40px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @keyframes col-exit {
   from { opacity: 1; }

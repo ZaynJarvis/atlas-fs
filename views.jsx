@@ -20,6 +20,8 @@ function sortEntries(entries, sortBy = 'name', sortDir = 'asc') {
 // ============================================================
 // 1. COLUMNS (Miller / NeXT browser)
 // ============================================================
+const COLUMN_W = 240;
+
 function ColumnsView({ fs, selection, setSelection }) {
   const trail = selection.trail;
   const [rawCols, setRawCols] = useS({});
@@ -27,6 +29,11 @@ function ColumnsView({ fs, selection, setSelection }) {
   const innerRef = useR();
   const prevTrailRef = useR(trail);
   const [exitCols, setExitCols] = useS([]);
+  const scrollRef = useR();
+  const animTimerRef = useR(null);
+  const animFrameRef = useR(null);
+  const lastScrollRef = useR(0);
+  const pendingTrailAnimRef = useR(null);
   useE(() => {
     let alive = true;
     Promise.all(trail.map((p) => fs.list(p).catch(() => [])))
@@ -46,88 +53,126 @@ function ColumnsView({ fs, selection, setSelection }) {
     return sorted;
   }, [rawCols, selection.sortBy, selection.sortDir]);
 
-  const scrollRef = useR();
-  const animTimerRef = useR(null);
+  const readInnerTranslateX = () => {
+    const inner = innerRef.current;
+    if (!inner) return 0;
+    const transform = window.getComputedStyle(inner).transform;
+    if (!transform || transform === 'none') return 0;
+    try {
+      return new DOMMatrixReadOnly(transform).m41 || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const readVisualScrollLeft = () => {
+    const el = scrollRef.current;
+    if (!el) return lastScrollRef.current;
+    // A running wrapper transform visually changes the scroll position without
+    // changing scrollLeft; fold it in before starting a new trail animation.
+    return el.scrollLeft - readInnerTranslateX();
+  };
+
+  const cancelColumnAnimation = () => {
+    if (animTimerRef.current) {
+      clearTimeout(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    const el = scrollRef.current;
+    const inner = innerRef.current;
+    if (el) el.style.scrollBehavior = '';
+    if (inner) {
+      inner.style.transition = '';
+      inner.style.transform = '';
+    }
+  };
+
+  const prepareTrailAnimation = (nextTrail) => {
+    const oldVisualScroll = readVisualScrollLeft();
+    cancelColumnAnimation();
+    const el = scrollRef.current;
+    const targetScroll = el ? Math.max(0, nextTrail.length * COLUMN_W - el.clientWidth) : 0;
+
+    if (nextTrail.length === trail.length) {
+      pendingTrailAnimRef.current = null;
+      setExitCols([]);
+      return;
+    }
+
+    pendingTrailAnimRef.current = { oldScroll: oldVisualScroll, targetScroll };
+    if (nextTrail.length < trail.length) {
+      setExitCols(trail.slice(nextTrail.length).map((p) => ({ path: p, entries: cols[p] || [] })));
+    } else {
+      setExitCols([]);
+    }
+  };
+
   // Use useLayoutEffect so the FLIP runs before the browser paints —
   // prevents a single-frame flash of the jumped position.
   useLE(() => {
     const prev = prevTrailRef.current;
-    prevTrailRef.current = trail;
     const el = scrollRef.current;
     const inner = innerRef.current;
 
-    if (trail.length < prev.length) {
-      // Cancel any in-progress animation
-      if (animTimerRef.current) {
-        clearTimeout(animTimerRef.current);
-        animTimerRef.current = null;
-        if (inner) { inner.style.transition = ''; inner.style.transform = ''; }
-      }
+    if (trail.length !== prev.length) {
+      const pending = pendingTrailAnimRef.current;
+      pendingTrailAnimRef.current = null;
 
-      const removed = prev.slice(trail.length);
-
-      // Capture scroll position BEFORE React re-renders
-      const oldScroll = el ? el.scrollLeft : 0;
-
-      // Use flushSync so exit columns are committed to the DOM immediately.
-      // This ensures .columns-inner still has the full width (trail + exit cols)
-      // when we measure/apply the FLIP transform below.
-      ReactDOM.flushSync(() => {
-        setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
-      });
-
-      // FLIP: First-Last-Invert-Play
       if (el && inner) {
-        const targetScroll = Math.max(0, trail.length * 240 - el.clientWidth);
-        const delta = oldScroll - targetScroll;
+        const oldScroll = pending?.oldScroll ?? lastScrollRef.current;
+        const targetScroll = pending?.targetScroll ?? Math.max(0, trail.length * COLUMN_W - el.clientWidth);
+        const delta = targetScroll - oldScroll;
 
         // Instantly jump scroll to the target position (no smooth behavior)
         el.style.scrollBehavior = 'auto';
         el.scrollLeft = targetScroll;
+        lastScrollRef.current = el.scrollLeft;
 
         // Compensate with translateX so it visually appears nothing moved yet
         inner.style.transition = 'none';
-        inner.style.transform = `translateX(${delta}px)`;
+        inner.style.transform = `translate3d(${delta}px, 0, 0)`;
 
         // Force the browser to commit the above styles before we animate
         void inner.getBoundingClientRect();
 
-        // Schedule the animation to start on the next frame.
-        // useLayoutEffect blocks paint, so rAF fires on the very first paint —
-        // the user sees the compensated position first, then the smooth slide.
-        requestAnimationFrame(() => {
+        animFrameRef.current = requestAnimationFrame(() => {
+          animFrameRef.current = null;
           if (!inner) return;
           inner.style.transition = 'transform 300ms ease-out';
-          inner.style.transform = 'translateX(0)';
+          inner.style.transform = 'translate3d(0, 0, 0)';
         });
       }
 
       animTimerRef.current = setTimeout(() => {
         animTimerRef.current = null;
+        animFrameRef.current = null;
         setExitCols([]);
         if (el) el.style.scrollBehavior = '';
         if (inner) { inner.style.transition = ''; inner.style.transform = ''; }
-      }, 320);
-      return () => {
-        if (animTimerRef.current) {
-          clearTimeout(animTimerRef.current);
-          animTimerRef.current = null;
-        }
-      };
+      }, 340);
+      prevTrailRef.current = trail;
+      return;
     }
 
+    pendingTrailAnimRef.current = null;
     setExitCols([]);
-    if (trail.length > prev.length && el) {
-      el.scrollLeft = el.scrollWidth;
-    }
+    prevTrailRef.current = trail;
   }, [trail.join('|')]);
+
+  useE(() => () => cancelColumnAnimation(), []);
 
   const onPick = (colIdx, entry) => {
     const next = trail.slice(0, colIdx + 1);
     if (entry.type === 'directory') {
       next.push(entry.path);
+      prepareTrailAnimation(next);
       setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
     } else {
+      prepareTrailAnimation(next);
       setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: null });
     }
   };
@@ -164,6 +209,7 @@ function ColumnsView({ fs, selection, setSelection }) {
         if (entry.type === 'directory') {
           const next = trail.slice(0, activeColIdx + 1);
           next.push(entry.path);
+          prepareTrailAnimation(next);
           setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
         }
       } else if (e.key === 'ArrowLeft') {
@@ -172,6 +218,7 @@ function ColumnsView({ fs, selection, setSelection }) {
         const leaving = trail[trail.length - 1];
         const newTrail = trail.slice(0, -1);
         const parent = newTrail[newTrail.length - 1];
+        prepareTrailAnimation(newTrail);
         setSelection({ ...selection, trail: newTrail, dir: parent, file: null, focus: leaving });
       }
     };
@@ -186,7 +233,7 @@ function ColumnsView({ fs, selection, setSelection }) {
 
   return (
     <div className="view-columns" ref={wrapRef}>
-      <div className="columns-scroll scroll" ref={scrollRef}>
+      <div className="columns-scroll scroll" ref={scrollRef} onScroll={(e) => { lastScrollRef.current = e.currentTarget.scrollLeft; }}>
         <div className="columns-inner" ref={innerRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
