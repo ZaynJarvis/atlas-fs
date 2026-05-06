@@ -149,7 +149,19 @@
       const isDir = entry.isDir ?? entry.is_dir ?? entry.type === 'directory';
       const path = entry.uri ? uriToPath(entry.uri) : Path.join(parentPath, name);
       const det = detectMime(name);
-      const mtime = entry.mtime ? (typeof entry.mtime === 'number' ? entry.mtime : Date.parse(entry.mtime)) : 0;
+      const rawMtime = entry.mtime || entry.modTime;
+      let mtime = 0;
+      if (rawMtime) {
+        if (typeof rawMtime === 'number') mtime = rawMtime;
+        else {
+          const parsed = Date.parse(rawMtime);
+          if (!isNaN(parsed)) mtime = parsed;
+          else if (/^\d{1,2}:\d{2}/.test(rawMtime)) {
+            const today = new Date().toISOString().slice(0, 10);
+            mtime = Date.parse(today + 'T' + rawMtime) || 0;
+          }
+        }
+      }
       return {
         path,
         name,

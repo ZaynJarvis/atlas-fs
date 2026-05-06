@@ -3,23 +3,45 @@
 
 const { useState: useS, useEffect: useE, useMemo: useM, useRef: useR, useCallback: useCB } = React;
 
+function sortEntries(entries, sortBy = 'name', sortDir = 'asc') {
+  return entries.slice().sort((a, b) => {
+    if (a.type !== b.type) {
+      if (a.type === 'directory') return -1;
+      if (b.type === 'directory') return 1;
+    }
+    let cmp = 0;
+    if (sortBy === 'mtime') cmp = (a.mtime || 0) - (b.mtime || 0);
+    else if (sortBy === 'size') cmp = (a.size || 0) - (b.size || 0);
+    else cmp = a.name.localeCompare(b.name, undefined, { numeric: true });
+    return sortDir === 'desc' ? -cmp : cmp;
+  });
+}
+
 // ============================================================
 // 1. COLUMNS (Miller / NeXT browser)
 // ============================================================
 function ColumnsView({ fs, selection, setSelection }) {
   const trail = selection.trail;
-  const [cols, setCols] = useS({});
+  const [rawCols, setRawCols] = useS({});
   const wrapRef = useR();
   useE(() => {
     let alive = true;
-    Promise.all(trail.map((p) => fs.list(p, { sortBy: 'name' }).catch(() => [])))
+    Promise.all(trail.map((p) => fs.list(p).catch(() => [])))
       .then((res) => {
         if (!alive) return;
         const next = {}; trail.forEach((p, i) => { next[p] = res[i]; });
-        setCols(next);
+        setRawCols(next);
       });
     return () => { alive = false; };
   }, [trail.join('|')]);
+
+  const cols = useM(() => {
+    const sorted = {};
+    for (const p of Object.keys(rawCols)) {
+      sorted[p] = sortEntries(rawCols[p], selection.sortBy, selection.sortDir);
+    }
+    return sorted;
+  }, [rawCols, selection.sortBy, selection.sortDir]);
 
   const scrollRef = useR();
   useE(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [trail.length]);
@@ -248,7 +270,7 @@ function TreeView({ fs, selection, setSelection }) {
           {rootChildren.map((c) => renderNode(c, 0))}
         </div>
       </div>
-
+      <TreeResizer />
       <Preview fs={fs} path={selection.file || selection.dir} />
     </div>
   );

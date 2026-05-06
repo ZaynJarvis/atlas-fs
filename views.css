@@ -47,7 +47,7 @@
 /* ============ TREE + DETAIL ============ */
 .view-tree {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: var(--tree-w, 280px) 1fr;
   height: 100%;
   position: relative;
 }
@@ -55,6 +55,7 @@
   border-right: 1px solid var(--line);
   background: var(--surface-2);
   display: flex; flex-direction: column;
+  min-height: 0;
 }
 .tree-head {
   padding: var(--s-3) var(--s-4);

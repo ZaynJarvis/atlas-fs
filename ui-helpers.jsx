@@ -280,6 +280,43 @@ function PreviewResizer() {
   );
 }
 
+// ---------- Resize handle for tree sidebar width ----------
+function TreeResizer() {
+  const [drag, setDrag] = useState(false);
+  useEffect(() => {
+    if (!drag) return;
+    document.body.setAttribute('data-resizing', 'true');
+    const onMove = (e) => {
+      const w = Math.max(160, Math.min(600, e.clientX));
+      document.documentElement.style.setProperty('--tree-w', w + 'px');
+      try { localStorage.setItem('atlas-tree-w', String(w)); } catch {}
+    };
+    const onUp = () => setDrag(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      document.body.removeAttribute('data-resizing');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [drag]);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('atlas-tree-w');
+      if (saved) document.documentElement.style.setProperty('--tree-w', saved + 'px');
+    } catch {}
+  }, []);
+  return (
+    <div
+      className="resize-handle"
+      data-dragging={drag}
+      style={{ left: 'var(--tree-w, 280px)' }}
+      onMouseDown={(e) => { e.preventDefault(); setDrag(true); }}
+      title="Drag to resize sidebar"
+    />
+  );
+}
+
 // ---------- Preview pane ----------
 const LEVEL_META = {
   l0: { name: 'L0', label: 'Abstract', desc: '~100 token summary' },

@@ -191,6 +191,16 @@ function App() {
 
         <div className="spacer"></div>
 
+        <button className="gear-btn sort-btn" onClick={() => {
+          const opts = ['name', 'mtime'];
+          const idx = opts.indexOf(selection.sortBy || 'name');
+          const next = opts[(idx + 1) % opts.length];
+          setSelection((s) => ({ ...s, sortBy: next, sortDir: next === 'mtime' ? 'desc' : 'asc' }));
+        }} title={`Sort by: ${selection.sortBy || 'name'}`} aria-label="Toggle sort">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h12M3 18h6"/></svg>
+          <span className="sort-label">{(selection.sortBy || 'name') === 'mtime' ? 'Modified' : 'Name'}</span>
+        </button>
+
         <button className="gear-btn" onClick={() => setTweak('theme', tweaks.theme === 'dark' ? 'light' : 'dark')} title={tweaks.theme === 'dark' ? 'Switch to light' : 'Switch to dark'} aria-label="Toggle theme">
           {tweaks.theme === 'dark' ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>

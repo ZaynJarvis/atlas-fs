@@ -274,6 +274,7 @@ input { font: inherit; color: inherit; }
   border-left: 1px solid var(--line);
   display: flex; flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 .preview-empty {
   flex: 1; display: flex; flex-direction: column;
@@ -477,6 +478,8 @@ input { font: inherit; color: inherit; }
 }
 .gear-btn:hover { background: var(--surface); color: var(--ink); border-color: var(--line-2); }
 .gear-btn + .gear-btn { margin-left: 4px; }
+.sort-btn { width: auto; padding: 0 10px; gap: 5px; border-radius: var(--r-md); }
+.sort-btn .sort-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* Settings modal */
 .settings-modal-backdrop {
