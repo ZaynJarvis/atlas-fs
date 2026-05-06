@@ -130,7 +130,7 @@ function ColumnsView({ fs, selection, setSelection }) {
           const isLast = i === trail.length - 1;
           const selectedChild = trail[i + 1] || (isLast ? (selection.file || selection.focus || (entries[0] && entries[0].path)) : null);
           return (
-            <div className="col" key={path + ':' + i}>
+            <div className="col" key={path + ':' + i} style={{zIndex: trail.length - i}}>
               <div className="col-head">
                 <span>{path === '/' ? '/' : window.FS.Path.basename(path)}</span>
                 <span className="count">{entries.length}</span>
@@ -149,7 +149,7 @@ function ColumnsView({ fs, selection, setSelection }) {
           );
         })}
         {exitCols.map(({ path, entries }) => (
-          <div className="col col-exit" key={'exit:' + path}>
+          <div className="col col-exit" key={'exit:' + path} style={{zIndex: 0}}>
             <div className="col-head">
               <span>{path === '/' ? '/' : window.FS.Path.basename(path)}</span>
               <span className="count">{entries.length}</span>
