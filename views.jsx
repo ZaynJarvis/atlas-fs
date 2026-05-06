@@ -52,7 +52,17 @@ function ColumnsView({ fs, selection, setSelection }) {
     if (trail.length < prev.length) {
       const removed = prev.slice(trail.length);
       setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
-      const timer = setTimeout(() => setExitCols([]), 180);
+      // Smooth-scroll to new last column while exit cols are still in DOM
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const target = el.children[trail.length - 1];
+        if (target) {
+          const right = target.offsetLeft + target.offsetWidth;
+          el.scrollLeft = Math.max(0, right - el.clientWidth);
+        }
+      });
+      const timer = setTimeout(() => setExitCols([]), 300);
       return () => clearTimeout(timer);
     }
     setExitCols([]);

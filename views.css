@@ -23,7 +23,7 @@
   animation: col-enter 180ms ease-out;
 }
 .col-exit {
-  animation: col-exit 180ms ease-in forwards;
+  animation: col-exit 300ms ease-in forwards;
   pointer-events: none;
 }
 @keyframes col-enter {
