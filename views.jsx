@@ -1,0 +1,494 @@
+/* Atlas — five navigation paradigms (v2) */
+/* All views consume only the read-only FS API */
+
+const { useState: useS, useEffect: useE, useMemo: useM, useRef: useR, useCallback: useCB } = React;
+
+// ============================================================
+// 1. COLUMNS (Miller / NeXT browser)
+// ============================================================
+function ColumnsView({ fs, selection, setSelection }) {
+  const trail = selection.trail;
+  const [cols, setCols] = useS({});
+  useE(() => {
+    let alive = true;
+    Promise.all(trail.map((p) => fs.list(p, { sortBy: 'name' }).catch(() => [])))
+      .then((res) => {
+        if (!alive) return;
+        const next = {}; trail.forEach((p, i) => { next[p] = res[i]; });
+        setCols(next);
+      });
+    return () => { alive = false; };
+  }, [trail.join('|')]);
+
+  const scrollRef = useR();
+  useE(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [trail.length]);
+
+  const onPick = (colIdx, entry) => {
+    const next = trail.slice(0, colIdx + 1);
+    if (entry.type === 'directory') {
+      next.push(entry.path);
+      setSelection({ ...selection, trail: next, file: null, dir: entry.path });
+    } else {
+      setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path) });
+    }
+  };
+
+  return (
+    <div className="view-columns">
+      <div className="columns-scroll scroll" ref={scrollRef}>
+        {trail.map((path, i) => {
+          const entries = cols[path] || [];
+          const selectedChild = trail[i + 1] || (i === trail.length - 1 ? selection.file : null);
+          return (
+            <div className="col" key={path + ':' + i}>
+              <div className="col-head">
+                <span>{path === '/' ? '/' : window.FS.Path.basename(path)}</span>
+                <span className="count">{entries.length}</span>
+              </div>
+              <div className="col-body scroll">
+                {entries.map((e) => (
+                  <div key={e.path} className="fs-row" data-selected={e.path === selectedChild} onClick={() => onPick(i, e)}>
+                    <EntryIcon entry={e} />
+                    <span className="name">{e.name}</span>
+                    {e.type === 'directory' && <span className="chev">▸</span>}
+                  </div>
+                ))}
+                {entries.length === 0 && <div style={{padding: '12px', color: 'var(--faint)', fontStyle: 'italic', fontFamily: 'var(--serif)', fontSize: 13}}>empty</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <PreviewResizer />
+      <Preview fs={fs} path={selection.file || selection.dir} />
+    </div>
+  );
+}
+
+// ============================================================
+// 2. TREE + DETAIL
+// ============================================================
+function TreeView({ fs, selection, setSelection }) {
+  const [expanded, setExpanded] = useS(() => new Set(['/', '/src']));
+  const [childCache, setChildCache] = useS({});
+  useE(() => {
+    const need = [...expanded].filter((p) => !childCache[p]);
+    if (!need.length) return;
+    Promise.all(need.map((p) => fs.list(p).then((c) => [p, c]).catch(() => [p, []])))
+      .then((pairs) => setChildCache((prev) => { const next = { ...prev }; for (const [p, c] of pairs) next[p] = c; return next; }));
+  }, [[...expanded].join('|')]);
+
+  const toggle = (p) => setExpanded((prev) => { const next = new Set(prev); if (next.has(p)) next.delete(p); else next.add(p); return next; });
+
+  const renderNode = (entry, depth) => {
+    if (entry.type !== 'directory') {
+      return (
+        <div key={entry.path} className="tree-node" data-selected={selection.file === entry.path} style={{ paddingLeft: 6 + depth * 14 }}
+          onClick={() => setSelection({ ...selection, file: entry.path, dir: window.FS.Path.dirname(entry.path) })}>
+          <span className="twirl"></span><EntryIcon entry={entry} /><span className="name">{entry.name}</span>
+        </div>
+      );
+    }
+    const open = expanded.has(entry.path);
+    return (
+      <React.Fragment key={entry.path}>
+        <div className="tree-node" data-selected={selection.dir === entry.path && !selection.file} style={{ paddingLeft: 6 + depth * 14 }}
+          onClick={() => { toggle(entry.path); setSelection({ ...selection, dir: entry.path, file: null }); }}>
+          <span className="twirl" data-open={open}>▶</span>
+          <FolderIcon open={open} />
+          <span className="name">{entry.name}</span>
+        </div>
+        {open && (childCache[entry.path] || []).map((c) => renderNode(c, depth + 1))}
+      </React.Fragment>
+    );
+  };
+
+  const rootChildren = childCache['/'] || [];
+  const detailDir = selection.dir || '/';
+  const { entries: detailEntries } = useFsList(fs, detailDir, { sortBy: selection.sortBy || 'name', sortDir: selection.sortDir || 'asc' });
+
+  const sortBy = (key) => {
+    const sd = selection.sortBy === key && selection.sortDir === 'asc' ? 'desc' : 'asc';
+    setSelection({ ...selection, sortBy: key, sortDir: sd });
+  };
+  const arrow = (key) => selection.sortBy === key ? (selection.sortDir === 'desc' ? '↓' : '↑') : '';
+
+  return (
+    <div className="view-tree">
+      <div className="tree-pane">
+        <div className="tree-head">Workspace</div>
+        <div className="tree-body scroll">
+          {rootChildren.map((c) => renderNode(c, 0))}
+        </div>
+      </div>
+
+      <Preview fs={fs} path={selection.file || selection.dir} />
+    </div>
+  );
+}
+
+// ============================================================
+// 3. DUAL-PANE (Norton / Total Commander)
+// ============================================================
+function DualPaneView({ fs, selection, setSelection }) {
+  const dual = selection.dual || { left: '/', right: '/src', active: 'left', leftSel: null, rightSel: null };
+  const setDual = (patch) => setSelection({ ...selection, dual: { ...dual, ...patch } });
+
+  const Pane = ({ side }) => {
+    const path = dual[side];
+    const sel = dual[side + 'Sel'];
+    const { entries } = useFsList(fs, path, { sortBy: 'name' });
+    const totalSize = (entries || []).reduce((a, b) => a + (b.type === 'file' ? b.size : 0), 0);
+    return (
+      <div className="dual-pane" data-active={dual.active === side} onClick={() => setDual({ active: side })}>
+        <div className="dual-head">
+          <Breadcrumbs path={path} onPick={(p) => setDual({ [side]: p, [side + 'Sel']: null, active: side })} />
+        </div>
+        <div className="dual-body scroll">
+          <table className="dual-table">
+            <tbody>
+              {path !== '/' && (
+                <tr onClick={() => setDual({ [side]: window.FS.Path.dirname(path), [side + 'Sel']: null, active: side })}>
+                  <td colSpan={3}><div className="name-cell"><span className="ficon"><svg viewBox="0 0 16 16"><path d="M9 4 L4 8 L9 12" stroke="var(--muted)" fill="none" strokeWidth="1.5"/></svg></span><span style={{color:'var(--muted)'}}>..</span></div></td>
+                </tr>
+              )}
+              {(entries || []).map((e) => (
+                <tr key={e.path} data-selected={sel === e.path}
+                  onClick={(ev) => { ev.stopPropagation(); setDual({ [side + 'Sel']: e.path, active: side }); if (e.type === 'file') setSelection((s) => ({ ...s, file: e.path, dual: { ...dual, [side + 'Sel']: e.path, active: side } })); }}
+                  onDoubleClick={() => { if (e.type === 'directory') setDual({ [side]: e.path, [side + 'Sel']: null, active: side }); }}>
+                  <td><div className="name-cell"><EntryIcon entry={e} /><span>{e.name}</span></div></td>
+                  <td className="muted-cell" style={{textAlign: 'right', width: 70}}>{e.type === 'directory' ? '<DIR>' : formatBytes(e.size)}</td>
+                  <td className="muted-cell" style={{width: 90}}>{formatRelTime(e.mtime)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="dual-foot">
+          <span><b>{(entries || []).length}</b> entries</span>
+          <span><b>{formatBytes(totalSize)}</b> total</span>
+          {sel && <span style={{marginLeft: 'auto'}}>↦ <b>{window.FS.Path.basename(sel)}</b></span>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="view-dual">
+      <Pane side="left" />
+      <Pane side="right" />
+    </div>
+  );
+}
+
+// ============================================================
+// 4. TREEMAP (proportional rectangles by size)
+// ============================================================
+function TreemapView({ fs, selection, setSelection }) {
+  const [tree, setTree] = useS(null);
+  const root = selection.dir || '/';
+
+  useE(() => {
+    let alive = true;
+    const build = async (path) => {
+      try {
+        const stat = await fs.stat(path);
+        if (stat.type !== 'directory') return { ...stat, value: stat.size || 1 };
+        const entries = await fs.list(path);
+        const children = await Promise.all(entries.map((e) => build(e.path)));
+        const value = children.reduce((a, b) => a + (b.value || 0), 0);
+        return { ...stat, children, value };
+      } catch { return null; }
+    };
+    build(root).then((t) => { if (alive) setTree(t); });
+    return () => { alive = false; };
+  }, [root]);
+
+  const canvasRef = useR(null);
+  const [size, setSize] = useS({ w: 800, h: 600 });
+  React.useLayoutEffect(() => {
+    if (!canvasRef.current) return;
+    const measure = () => {
+      const r = canvasRef.current.getBoundingClientRect();
+      setSize({ w: Math.max(200, r.width - 24), h: Math.max(200, r.height - 24) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(canvasRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // squarified treemap layout (simplified)
+  const layout = useM(() => {
+    if (!tree || !tree.children) return [];
+    const cells = [];
+    const place = (node, x, y, w, h, depth) => {
+      if (w < 4 || h < 4) return;
+      if (node.type === 'directory') {
+        cells.push({ ...node, x, y, w, h, depth, isContainer: true });
+        const labelH = depth === 0 ? 0 : Math.min(18, h * 0.18);
+        const pad = 1;
+        const ix = x + pad, iy = y + labelH + pad;
+        const iw = Math.max(0, w - pad * 2), ih = Math.max(0, h - labelH - pad * 2);
+        const kids = (node.children || []).filter((c) => c.value > 0).sort((a, b) => b.value - a.value);
+        const total = kids.reduce((a, b) => a + b.value, 0);
+        if (!total || iw < 4 || ih < 4) return;
+        // squarified strip layout
+        let cx = ix, cy = iy, cw = iw, ch = ih;
+        let i = 0;
+        while (i < kids.length) {
+          const horiz = cw >= ch;
+          const stripLen = horiz ? cw : ch;
+          const stripDepth = horiz ? ch : cw;
+          const remaining = kids.slice(i).reduce((a, b) => a + b.value, 0);
+          if (!remaining) break;
+          // add to strip while aspect improves
+          let strip = [];
+          let stripSum = 0;
+          let bestRatio = Infinity;
+          while (i < kids.length) {
+            const next = kids[i];
+            const nextSum = stripSum + next.value;
+            const stripArea = (nextSum / remaining) * stripLen * stripDepth;
+            const stripWidth = stripArea / stripLen;
+            const worst = Math.max(...[...strip, next].map((k) => {
+              const a = (k.value / nextSum) * stripLen * stripWidth;
+              const side = a / stripWidth;
+              return Math.max(stripWidth / side, side / stripWidth);
+            }));
+            if (worst > bestRatio) break;
+            bestRatio = worst;
+            strip.push(next);
+            stripSum = nextSum;
+            i++;
+            if (i >= kids.length) break;
+            // recompute bestRatio with current strip
+            const w2 = ((stripSum / remaining) * stripLen * stripDepth) / stripLen;
+            bestRatio = Math.max(...strip.map((k) => {
+              const a = (k.value / stripSum) * stripLen * w2;
+              const side = a / w2;
+              return Math.max(w2 / side, side / w2);
+            }));
+          }
+          if (!strip.length) { strip = [kids[i]]; stripSum = kids[i].value; i++; }
+          const stripWidth = ((stripSum / remaining) * stripLen * stripDepth) / stripLen;
+          let off = 0;
+          for (const k of strip) {
+            const a = (k.value / stripSum) * stripLen * stripWidth;
+            const side = a / stripWidth;
+            if (horiz) place(k, cx + off, cy, side, stripWidth, depth + 1);
+            else place(k, cx, cy + off, stripWidth, side, depth + 1);
+            off += side;
+          }
+          if (horiz) { cy += stripWidth; ch -= stripWidth; }
+          else { cx += stripWidth; cw -= stripWidth; }
+          if (ch < 1 || cw < 1) break;
+        }
+      } else {
+        cells.push({ ...node, x, y, w, h, depth, isContainer: false });
+      }
+    };
+    place(tree, 0, 0, size.w, size.h, 0);
+    return cells;
+  }, [tree, size.w, size.h]);
+
+  return (
+    <div className="view-treemap">
+      <div className="treemap-stage">
+        <div className="treemap-toolbar">
+          <Breadcrumbs path={root} onPick={(p) => setSelection({ ...selection, dir: p, file: null })} />
+          <span style={{marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)'}}>
+            {tree ? `${formatBytes(tree.value)} across ${layout.filter(c => !c.isContainer).length} files` : 'building…'}
+          </span>
+        </div>
+        <div className="treemap-canvas" ref={canvasRef}>
+          {layout.map((c, i) => {
+            if (c.isContainer && c.depth === 0) return null;
+            const langColor = LANG_COLORS[c.language] || '#aaa';
+            const isFile = !c.isContainer;
+            const tone = isFile ? 0.18 + Math.min(0.55, c.value / (tree?.value || 1) * 8) : 0;
+            return (
+              <div key={c.path + i}
+                className="tm-cell"
+                data-type={c.type}
+                data-selected={selection.file === c.path}
+                style={{
+                  left: c.x, top: c.y, width: c.w, height: c.h,
+                  background: isFile ? `color-mix(in oklch, ${langColor} ${tone * 100}%, var(--surface))` : 'var(--surface-2)',
+                }}
+                onClick={() => isFile ? setSelection({ ...selection, file: c.path }) : null}
+                onDoubleClick={() => c.isContainer ? setSelection({ ...selection, dir: c.path, file: null }) : null}
+                title={`${c.path} — ${formatBytes(c.value)}`}
+              >
+                {c.isContainer ? (
+                  <>
+                    <div className="tm-dir-label">
+                      <FolderIcon />
+                      <span>{c.name}</span>
+                      <span className="sz">{formatBytes(c.value)}</span>
+                    </div>
+                  </>
+                ) : c.w > 60 && c.h > 24 ? (
+                  <>
+                    <div className="tm-file-name">{c.name}</div>
+                    <div className="tm-file-meta">{formatBytes(c.value)}</div>
+                  </>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <PreviewResizer />
+      <Preview fs={fs} path={selection.file} />
+    </div>
+  );
+}
+
+// ============================================================
+// 5. GRAPH (radial nodes/edges of folder structure)
+// ============================================================
+function GraphView({ fs, selection, setSelection }) {
+  const center = selection.dir || '/';
+  const [data, setData] = useS({ nodes: [], links: [] });
+
+  useE(() => {
+    let alive = true;
+    (async () => {
+      const nodes = []; const links = [];
+      const centerStat = await fs.stat(center).catch(() => null);
+      if (!centerStat) return;
+      const centerNode = { ...centerStat, id: center, role: 'center' };
+      nodes.push(centerNode);
+
+      // children of center
+      let children = [];
+      try { children = await fs.list(center); } catch {}
+      for (const c of children) {
+        nodes.push({ ...c, id: c.path, role: 'child' });
+        links.push({ source: center, target: c.path });
+      }
+
+      // parent + siblings (context)
+      if (center !== '/') {
+        const parent = window.FS.Path.dirname(center);
+        const parentStat = await fs.stat(parent).catch(() => null);
+        if (parentStat) {
+          nodes.push({ ...parentStat, id: parent, role: 'parent' });
+          links.push({ source: parent, target: center });
+          let sibs = [];
+          try { sibs = await fs.list(parent); } catch {}
+          for (const s of sibs) {
+            if (s.path === center) continue;
+            nodes.push({ ...s, id: s.path, role: 'sibling' });
+            links.push({ source: parent, target: s.path });
+          }
+        }
+      }
+      if (alive) setData({ nodes, links });
+    })();
+    return () => { alive = false; };
+  }, [center]);
+
+  const stageRef = useR(null);
+  const svgRef = useR(null);
+  const [size, setSize] = useS({ w: 800, h: 600 });
+  React.useLayoutEffect(() => {
+    if (!svgRef.current) return;
+    const measure = () => {
+      const r = svgRef.current.getBoundingClientRect();
+      const w = Math.max(200, r.width);
+      const h = Math.max(200, r.height);
+      setSize((s) => (s.w === w && s.h === h) ? s : { w, h });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svgRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Deterministic radial layout
+  const positioned = useM(() => {
+    const cx = size.w / 2, cy = size.h / 2;
+    const byId = {};
+    const nodes = data.nodes.map((n) => ({ ...n }));
+    nodes.forEach((n) => byId[n.id] = n);
+    const centerN = byId[center];
+    const parent = nodes.find((n) => n.role === 'parent');
+    const children = nodes.filter((n) => n.role === 'child');
+    const sibs = nodes.filter((n) => n.role === 'sibling');
+
+    if (centerN) { centerN.x = cx; centerN.y = cy; centerN.r = 28; }
+    if (parent) { parent.x = cx; parent.y = cy - 180; parent.r = 22; }
+
+    const childR = Math.min(cx, cy) - 80;
+    children.forEach((c, i) => {
+      const ang = (i / Math.max(1, children.length)) * Math.PI * 2 - Math.PI / 2;
+      c.x = cx + Math.cos(ang) * childR;
+      c.y = cy + Math.sin(ang) * childR;
+      c.r = c.type === 'directory' ? 18 : 14;
+    });
+    const sibR = 80;
+    sibs.forEach((s, i) => {
+      const ang = ((i + 0.5) / Math.max(1, sibs.length)) * Math.PI * 2 - Math.PI / 2;
+      if (parent) {
+        s.x = parent.x + Math.cos(ang) * sibR;
+        s.y = parent.y + Math.sin(ang) * sibR;
+      } else {
+        s.x = cx + Math.cos(ang) * sibR;
+        s.y = cy + Math.sin(ang) * sibR;
+      }
+      s.r = 10;
+    });
+
+    return { nodes, links: data.links.map((l) => ({ source: byId[l.source], target: byId[l.target] })).filter((l) => l.source && l.target) };
+  }, [data, size.w, size.h, center]);
+
+  return (
+    <div className="view-graph">
+      <div className="graph-stage" ref={stageRef}>
+        <div className="graph-toolbar">
+          <Breadcrumbs path={center} onPick={(p) => setSelection({ ...selection, dir: p, file: null })} />
+          <span style={{marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)'}}>
+            {data.nodes.length} nodes · click to drill
+          </span>
+        </div>
+        <svg ref={svgRef} className="graph-svg" width="100%" height="100%" viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="xMidYMid meet">
+          {positioned.links.map((l, i) => (
+            <line key={i} className="graph-link"
+              data-active={l.source.id === center || l.target.id === center}
+              x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y} />
+          ))}
+          {positioned.nodes.map((n) => (
+            <g key={n.id} className="graph-node" data-type={n.type} data-active={n.id === center}
+              transform={`translate(${n.x},${n.y})`}
+              onClick={() => {
+                if (n.type === 'directory') setSelection({ ...selection, dir: n.id, file: null });
+                else setSelection({ ...selection, file: n.id, dir: window.FS.Path.dirname(n.id) });
+              }}>
+              <circle className="graph-node-bg" r={n.r} />
+              {n.type === 'directory' && (
+                <text textAnchor="middle" dy={3} fontSize={10} fontFamily="var(--mono)"
+                  fill={n.id === center ? 'var(--bg)' : 'var(--ink-2)'}>
+                  {n.id === '/' ? '/' : '◗'}
+                </text>
+              )}
+              <text className="graph-node-label" textAnchor="middle" dy={n.r + 12}>
+                {n.name === '' ? '/' : (n.name.length > 16 ? n.name.slice(0, 14) + '…' : n.name)}
+              </text>
+            </g>
+          ))}
+        </svg>
+        <div className="graph-legend">
+          <div><b>center</b> — current location</div>
+          <div><b>↑</b> parent · <b>○</b> sibling · <b>●</b> child</div>
+          <div>click any node to recenter</div>
+        </div>
+      </div>
+      <PreviewResizer />
+      <Preview fs={fs} path={selection.file} />
+    </div>
+  );
+}
+
+Object.assign(window, { ColumnsView, TreeView, DualPaneView, TreemapView, GraphView });
