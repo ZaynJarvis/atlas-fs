@@ -690,6 +690,24 @@ body[data-resizing-y="true"] * {
   .preview-meta {
     display: none;
   }
+  .preview {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .preview-body,
+  .preview-body-multi {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+  .preview-body-multi,
+  .preview-section {
+    display: block;
+  }
+  .preview-section-head {
+    position: static;
+  }
   .resize-handle {
     display: none;
   }
