@@ -53,15 +53,13 @@ function ColumnsView({ fs, selection, setSelection }) {
       const removed = prev.slice(trail.length);
       setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
       // Smooth-scroll to new last column while exit cols are still in DOM
-      requestAnimationFrame(() => {
+      // Use fixed 240px col width — avoids unreliable offsetLeft in overflowed flex
+      setTimeout(() => {
         const el = scrollRef.current;
         if (!el) return;
-        const target = el.children[trail.length - 1];
-        if (target) {
-          const right = target.offsetLeft + target.offsetWidth;
-          el.scrollLeft = Math.max(0, right - el.clientWidth);
-        }
-      });
+        const targetRight = trail.length * 240;
+        el.scrollTo({ left: Math.max(0, targetRight - el.clientWidth), behavior: 'smooth' });
+      }, 16);
       const timer = setTimeout(() => setExitCols([]), 300);
       return () => clearTimeout(timer);
     }
