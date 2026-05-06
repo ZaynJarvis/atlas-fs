@@ -26,8 +26,7 @@
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
-  box-shadow: 0 24px 60px -20px color-mix(in oklab, var(--ink) 30%, transparent),
-              0 8px 20px -8px color-mix(in oklab, var(--ink) 22%, transparent);
+  box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--ink) 12%, transparent);
   overflow: hidden;
 }
 
@@ -166,6 +165,12 @@
   padding: 1px 6px;
   border-radius: 3px;
 }
+.search-scope { display: flex; align-items: center; gap: 4px; }
+.scope-arrow {
+  background: none; border: none; padding: 0 2px; cursor: pointer;
+  font-size: 8px; color: var(--muted); line-height: 1;
+}
+.scope-arrow:hover { color: var(--ink); }
 .search-hint { color: var(--faint); font-style: italic; }
 
 /* Results list */

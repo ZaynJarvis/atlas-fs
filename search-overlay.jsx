@@ -28,7 +28,7 @@ const SEARCH_MODES = [
   },
 ];
 
-function SearchOverlay({ fs, scope, onPick, onClose, initialMode = 'find' }) {
+function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode = 'find' }) {
   const [mode, setMode] = _uS(initialMode);
   const [query, setQuery] = _uS('');
   const [results, setResults] = _uS([]);
@@ -37,6 +37,28 @@ function SearchOverlay({ fs, scope, onPick, onClose, initialMode = 'find' }) {
   const [active, setActive] = _uS(0);
   const inputRef = _uR();
   const listRef = _uR();
+
+  // Scope: local state, default to /resources, cycle through top-level dirs
+  const [dirs, setDirs] = _uS(['/']);
+  const [scope, setScope] = _uS('/resources');
+  _uE(() => {
+    (async () => {
+      try {
+        const entries = await fs.list('/');
+        const d = ['/', ...entries.filter((e) => e.type === 'directory').map((e) => e.path)];
+        setDirs(d);
+        if (!d.includes(scope)) setScope(d.includes('/resources') ? '/resources' : d[0]);
+      } catch {}
+    })();
+  }, [fs]);
+
+  const cycleScope = (dir) => {
+    setScope((cur) => {
+      const idx = dirs.indexOf(cur);
+      const next = (idx + dir + dirs.length) % dirs.length;
+      return dirs[next];
+    });
+  };
 
   // autofocus on mount + on mode change
   _uE(() => { inputRef.current?.focus(); inputRef.current?.select(); }, [mode]);
@@ -95,7 +117,7 @@ function SearchOverlay({ fs, scope, onPick, onClose, initialMode = 'find' }) {
     let path = null, line = null;
     if (mode === 'find') path = r.path;
     else if (mode === 'grep') { path = r.uri; line = r.line; }
-    else if (mode === 'glob') path = r;
+    else if (mode === 'glob') path = typeof r === 'string' ? r : (r.path || r.uri || '');
     if (path) { onPick(path, line); onClose(); }
   };
 
@@ -142,7 +164,12 @@ function SearchOverlay({ fs, scope, onPick, onClose, initialMode = 'find' }) {
         </div>
 
         <div className="search-meta">
-          <span className="search-scope">scope: <code>{scope}</code></span>
+          <span className="search-scope">
+            scope:
+            <button className="scope-arrow" onClick={() => cycleScope(-1)} aria-label="Previous scope">▲</button>
+            <code>{scope === '/' ? '/' : window.FS.Path.basename(scope)}</code>
+            <button className="scope-arrow" onClick={() => cycleScope(1)} aria-label="Next scope">▼</button>
+          </span>
           <span className="search-hint">{curMode.hint}</span>
         </div>
 
@@ -222,8 +249,7 @@ function SearchResultRow({ mode, result, query, active, onMouseEnter, onClick })
       </div>
     );
   }
-  // glob — result is a string path
-  const path = result;
+  const path = typeof result === 'string' ? result : (result.path || result.uri || '');
   return (
     <div className="search-row" data-active={active} onMouseEnter={onMouseEnter} onClick={onClick}>
       <span className="search-row-path">

@@ -154,11 +154,15 @@
       if (rawMtime) {
         if (typeof rawMtime === 'number') mtime = rawMtime;
         else {
-          const parsed = Date.parse(rawMtime);
-          if (!isNaN(parsed)) mtime = parsed;
-          else if (/^\d{1,2}:\d{2}/.test(rawMtime)) {
-            const today = new Date().toISOString().slice(0, 10);
-            mtime = Date.parse(today + 'T' + rawMtime) || 0;
+          const s = rawMtime.trim();
+          if (/^\d{1,2}:\d{2}/.test(s)) {
+            const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+            mtime = Date.parse(today + 'T' + s + '+08:00') || 0;
+          } else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            mtime = Date.parse(s + 'T00:00:00+08:00') || 0;
+          } else {
+            const parsed = Date.parse(s);
+            if (!isNaN(parsed)) mtime = parsed;
           }
         }
       }

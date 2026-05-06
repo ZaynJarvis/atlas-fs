@@ -29,9 +29,13 @@ function formatRelTime(ts) {
 
 function formatAbsTime(ts) {
   if (!ts) return '—';
-  const d = new Date(ts);
+  const d = new Date(ts + 8 * 3600000);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+  const y = d.getUTCFullYear(), mo = d.getUTCMonth(), day = d.getUTCDate();
+  const h = d.getUTCHours(), m = d.getUTCMinutes();
+  const date = `${months[mo]} ${day} ${y}`;
+  if (h === 0 && m === 0) return date;
+  return `${date}, ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
 function formatMode(mode) {
@@ -371,8 +375,6 @@ function Preview({ fs, path }) {
         {stat.language && <span className="lang-badge">{stat.language}</span>}
       </div>
       <div className="preview-meta">
-        <div className="pair"><span>kind</span><b>{stat.type === 'directory' ? 'folder' : (stat.language || 'file')}</b></div>
-        <div className="pair"><span>size</span><b>{formatBytes(stat.size)}</b></div>
         <div className="pair"><span>modified</span><b>{formatAbsTime(stat.mtime)}</b></div>
         <div className="pair"><span>path</span><b style={{fontFamily:'var(--mono)', fontSize: 11}}>{stat.path}</b></div>
       </div>

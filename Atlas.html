@@ -62,13 +62,13 @@ function App() {
   const [paradigm, setParadigm] = useState('columns');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [selection, setSelection] = useState({
-    trail: ['/'],
-    dir: '/',
-    file: '/README.md',
-    sortBy: 'name',
-    sortDir: 'asc',
-    focus: null,
+  const [selection, setSelection] = useState(() => {
+    let sortBy = 'name', sortDir = 'asc';
+    try {
+      const saved = localStorage.getItem('atlas-sort');
+      if (saved) { const s = JSON.parse(saved); sortBy = s.sortBy || 'name'; sortDir = s.sortDir || 'asc'; }
+    } catch {}
+    return { trail: ['/'], dir: '/', file: '/README.md', sortBy, sortDir, focus: null };
   });
 
   // Build the FS — switches based on backend tweak
@@ -195,7 +195,11 @@ function App() {
           const opts = ['name', 'mtime'];
           const idx = opts.indexOf(selection.sortBy || 'name');
           const next = opts[(idx + 1) % opts.length];
-          setSelection((s) => ({ ...s, sortBy: next, sortDir: next === 'mtime' ? 'desc' : 'asc' }));
+          setSelection((s) => {
+            const sortDir = next === 'mtime' ? 'desc' : 'asc';
+            try { localStorage.setItem('atlas-sort', JSON.stringify({ sortBy: next, sortDir })); } catch {}
+            return { ...s, sortBy: next, sortDir };
+          });
         }} title={`Sort by: ${selection.sortBy || 'name'}`} aria-label="Toggle sort">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h12M3 18h6"/></svg>
           <span className="sort-label">{(selection.sortBy || 'name') === 'mtime' ? 'Modified' : 'Name'}</span>

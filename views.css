@@ -40,9 +40,9 @@
   padding: 4px;
 }
 .col .fs-row { border-radius: 0; padding: 0 var(--s-3); }
-.col .fs-row[data-selected="true"] { background: var(--accent); color: #fff; }
+.col .fs-row[data-selected="true"] { background: var(--selected); }
 .col .fs-row[data-selected="true"] .meta,
-.col .fs-row[data-selected="true"] .chev { color: #fff; opacity: 0.8; }
+.col .fs-row[data-selected="true"] .chev { opacity: 0.8; }
 
 /* ============ TREE + DETAIL ============ */
 .view-tree {
@@ -79,8 +79,7 @@
 }
 .tree-node:hover { background: var(--hover); }
 .tree-node[data-selected="true"] {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--selected);
 }
 .tree-node .twirl {
   width: 16px; flex: 0 0 16px;
