@@ -24,6 +24,8 @@ function ColumnsView({ fs, selection, setSelection }) {
   const trail = selection.trail;
   const [rawCols, setRawCols] = useS({});
   const wrapRef = useR();
+  const prevTrailRef = useR(trail);
+  const [exitCols, setExitCols] = useS([]);
   useE(() => {
     let alive = true;
     Promise.all(trail.map((p) => fs.list(p).catch(() => [])))
@@ -44,6 +46,18 @@ function ColumnsView({ fs, selection, setSelection }) {
   }, [rawCols, selection.sortBy, selection.sortDir]);
 
   const scrollRef = useR();
+  useE(() => {
+    const prev = prevTrailRef.current;
+    if (trail.length < prev.length) {
+      const removed = prev.slice(trail.length);
+      setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
+      const timer = setTimeout(() => setExitCols([]), 180);
+      return () => clearTimeout(timer);
+    }
+    setExitCols([]);
+    prevTrailRef.current = trail;
+  }, [trail.join('|')]);
+  useE(() => { prevTrailRef.current = trail; }, [trail.join('|')]);
   useE(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [trail.length]);
 
   const onPick = (colIdx, entry) => {
@@ -134,6 +148,23 @@ function ColumnsView({ fs, selection, setSelection }) {
             </div>
           );
         })}
+        {exitCols.map(({ path, entries }) => (
+          <div className="col col-exit" key={'exit:' + path}>
+            <div className="col-head">
+              <span>{path === '/' ? '/' : window.FS.Path.basename(path)}</span>
+              <span className="count">{entries.length}</span>
+            </div>
+            <div className="col-body scroll">
+              {entries.map((e) => (
+                <div key={e.path} className="fs-row">
+                  <EntryIcon entry={e} />
+                  <span className="name">{e.name}</span>
+                  {e.type === 'directory' && <span className="chev">▸</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
       <PreviewResizer />
       <Preview fs={fs} path={selection.file || selection.dir} />
