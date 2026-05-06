@@ -103,8 +103,8 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
       setMode(next.key);
       return;
     }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(results.length - 1, a + 1)); return; }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); cycleScope(1); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); cycleScope(-1); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
       const r = results[active];
@@ -144,6 +144,7 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
 
         <div className="search-input-wrap">
           <span className="search-mode-marker">{curMode.label.toLowerCase()}</span>
+          <span className="search-scope-marker" title="↑↓ to change scope">{scope === '/' ? '/' : window.FS.Path.basename(scope)}</span>
           <input
             ref={inputRef}
             className="search-input"
@@ -164,12 +165,6 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
         </div>
 
         <div className="search-meta">
-          <span className="search-scope">
-            scope:
-            <button className="scope-arrow" onClick={() => cycleScope(-1)} aria-label="Previous scope">▲</button>
-            <code>{scope === '/' ? '/' : window.FS.Path.basename(scope)}</code>
-            <button className="scope-arrow" onClick={() => cycleScope(1)} aria-label="Next scope">▼</button>
-          </span>
           <span className="search-hint">{curMode.hint}</span>
         </div>
 
@@ -197,7 +192,7 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
         </div>
 
         <div className="search-foot">
-          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> scope</span>
           <span><kbd>↵</kbd> open</span>
           <span><kbd>tab</kbd> mode</span>
           <span><kbd>esc</kbd> close</span>

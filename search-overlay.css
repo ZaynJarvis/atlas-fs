@@ -99,17 +99,23 @@
   padding: 14px 18px;
   border-bottom: 1px solid var(--line);
 }
-.search-mode-marker {
+.search-mode-marker, .search-scope-marker {
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-soft);
   padding: 3px 8px;
   border-radius: 4px;
   flex-shrink: 0;
+}
+.search-mode-marker {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.search-scope-marker {
+  color: var(--ink-2);
+  background: var(--hover);
 }
 .search-input {
   flex: 1;
@@ -165,12 +171,6 @@
   padding: 1px 6px;
   border-radius: 3px;
 }
-.search-scope { display: flex; align-items: center; gap: 4px; }
-.scope-arrow {
-  background: none; border: none; padding: 0 2px; cursor: pointer;
-  font-size: 8px; color: var(--muted); line-height: 1;
-}
-.scope-arrow:hover { color: var(--ink); }
 .search-hint { color: var(--faint); font-style: italic; }
 
 /* Results list */
