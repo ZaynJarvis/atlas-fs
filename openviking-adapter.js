@@ -62,8 +62,35 @@
       this.account = opts.account || '';
       this.user = opts.user || '';
       this.timeoutMs = opts.timeoutMs ?? 15000;
-      this._listCache = new Map();   // path -> {entries, expires}
+      this._listCache = new Map();
       this._statCache = new Map();
+      this._persistTimer = null;
+      this._restoreListCache();
+    }
+
+    _lsKey() { return 'atlas-fs-cache:' + this.url; }
+
+    _restoreListCache() {
+      try {
+        const raw = localStorage.getItem(this._lsKey());
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        for (const [path, entries] of Object.entries(saved)) {
+          this._listCache.set(path, { entries, expires: Date.now() + 60000 });
+          for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 60000 });
+        }
+      } catch {}
+    }
+
+    _schedulePersist() {
+      clearTimeout(this._persistTimer);
+      this._persistTimer = setTimeout(() => {
+        try {
+          const out = {};
+          for (const [path, { entries }] of this._listCache) out[path] = entries;
+          localStorage.setItem(this._lsKey(), JSON.stringify(out));
+        } catch {}
+      }, 30000);
     }
 
     _headers(extra = {}) {
@@ -119,8 +146,8 @@
       const raw = data.result || data.entries || data || [];
       const entries = (Array.isArray(raw) ? raw : []).map((e) => this._normalize(e, path));
       this._listCache.set(path, { entries, expires: Date.now() + 5000 });
-      // also opportunistically populate stat cache
       for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 5000 });
+      this._schedulePersist();
       return this._applyOpts(entries, opts);
     }
 
@@ -324,6 +351,7 @@
     invalidate() {
       this._listCache.clear();
       this._statCache.clear();
+      clearTimeout(this._persistTimer);
     }
   }
 
