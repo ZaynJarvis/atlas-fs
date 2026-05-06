@@ -24,6 +24,7 @@ function ColumnsView({ fs, selection, setSelection }) {
   const trail = selection.trail;
   const [rawCols, setRawCols] = useS({});
   const wrapRef = useR();
+  const innerRef = useR();
   const prevTrailRef = useR(trail);
   const [exitCols, setExitCols] = useS([]);
   useE(() => {
@@ -49,23 +50,40 @@ function ColumnsView({ fs, selection, setSelection }) {
   useE(() => {
     const prev = prevTrailRef.current;
     prevTrailRef.current = trail;
+    const el = scrollRef.current;
+    const inner = innerRef.current;
+
     if (trail.length < prev.length) {
       const removed = prev.slice(trail.length);
       setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
-      // Smooth-scroll to new last column while exit cols are still in DOM
-      // Use fixed 240px col width — avoids unreliable offsetLeft in overflowed flex
-      setTimeout(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-        const targetRight = trail.length * 240;
-        el.scrollTo({ left: Math.max(0, targetRight - el.clientWidth), behavior: 'smooth' });
-      }, 16);
-      const timer = setTimeout(() => setExitCols([]), 300);
+
+      // FLIP: instantly jump scroll, compensate with transform, then animate
+      if (el && inner) {
+        const oldScroll = el.scrollLeft;
+        const targetScroll = Math.max(0, trail.length * 240 - el.clientWidth);
+        const delta = oldScroll - targetScroll;
+
+        el.style.scrollBehavior = 'auto';
+        el.scrollLeft = targetScroll;
+
+        inner.style.transition = 'none';
+        inner.style.transform = `translateX(${delta}px)`;
+        inner.offsetHeight; // force reflow
+        inner.style.transition = 'transform 300ms ease-out';
+        inner.style.transform = 'translateX(0)';
+      }
+
+      const timer = setTimeout(() => {
+        setExitCols([]);
+        if (el) el.style.scrollBehavior = '';
+        if (inner) { inner.style.transition = ''; inner.style.transform = ''; }
+      }, 300);
       return () => clearTimeout(timer);
     }
+
     setExitCols([]);
-    if (trail.length > prev.length && scrollRef.current) {
-      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    if (trail.length > prev.length && el) {
+      el.scrollLeft = el.scrollWidth;
     }
   }, [trail.join('|')]);
 
@@ -134,6 +152,7 @@ function ColumnsView({ fs, selection, setSelection }) {
   return (
     <div className="view-columns" ref={wrapRef}>
       <div className="columns-scroll scroll" ref={scrollRef}>
+        <div className="columns-inner" ref={innerRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
           const isLast = i === trail.length - 1;
@@ -174,6 +193,7 @@ function ColumnsView({ fs, selection, setSelection }) {
             </div>
           </div>
         ))}
+        </div>
       </div>
       <PreviewResizer />
       <Preview fs={fs} path={selection.file || selection.dir} />

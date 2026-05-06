@@ -8,11 +8,14 @@
   position: relative;
 }
 .columns-scroll {
-  display: flex;
   overflow-x: auto;
-  scroll-behavior: smooth;
   background: var(--surface-2);
   border-right: 1px solid var(--line);
+}
+.columns-inner {
+  display: flex;
+  min-height: 100%;
+  will-change: transform;
 }
 .col {
   flex: 0 0 240px;
