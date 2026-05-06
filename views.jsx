@@ -324,8 +324,12 @@ function ColumnsSplitResizer() {
     };
   }, [drag]);
 
-  const startDrag = (e) => {
+  const startMouseDrag = (e) => {
     e.preventDefault();
+    setDrag(true);
+  };
+
+  const startTouchDrag = () => {
     setDrag(true);
   };
 
@@ -333,8 +337,8 @@ function ColumnsSplitResizer() {
     <div
       className="columns-split-handle"
       data-dragging={drag}
-      onMouseDown={startDrag}
-      onTouchStart={startDrag}
+      onMouseDown={startMouseDrag}
+      onTouchStart={startTouchDrag}
       title="Drag to resize browser and reader"
     />
   );

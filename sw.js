@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atlas-pwa-v1';
+const CACHE_NAME = 'atlas-pwa-v2';
 const CDN_ORIGINS = new Set(['https://unpkg.com']);
 const APP_SHELL = [
   './Atlas.html',

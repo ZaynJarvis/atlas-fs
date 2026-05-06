@@ -210,31 +210,19 @@
     async stat(path) {
       const cached = this._statCache.get(path);
       if (cached && cached.expires > Date.now()) return cached.value;
-      // Try /api/v1/fs/stat first (some builds expose it); fall back to listing parent.
-      const uri = pathToUri(path);
-      try {
-        const res = await this._req(`/api/v1/fs/stat?uri=${encodeURIComponent(uri)}`);
-        const data = await res.json();
-        const raw = data.result || data;
-        const norm = this._normalize({ ...raw, name: raw.name || Path.basename(path) || '/' }, Path.dirname(path));
-        this._statCache.set(path, { value: norm, expires: Date.now() + 5000 });
-        return norm;
-      } catch (e) {
-        if (e.code !== 'ENOENT' && path !== '/') {
-          // Fallback: scan parent directory
-          const parent = Path.dirname(path);
-          const entries = await this.list(parent).catch(() => []);
-          const hit = entries.find((x) => x.path === path);
-          if (hit) return hit;
-        }
-        if (path === '/') {
-          // Synthesize root stat
-          const root = { path: '/', name: '/', type: 'directory', size: 0, mtime: 0, ctime: 0, mode: 0o555, hidden: false };
-          this._statCache.set(path, { value: root, expires: Date.now() + 60000 });
-          return root;
-        }
-        throw e;
+      if (path === '/') {
+        const root = { path: '/', name: '/', type: 'directory', size: 0, mtime: 0, ctime: 0, mode: 0o555, hidden: false };
+        this._statCache.set(path, { value: root, expires: Date.now() + 60000 });
+        return root;
       }
+
+      // Avoid probing /api/v1/fs/stat because some OpenViking deployments return
+      // 400 for valid paths. Parent listings already contain enough metadata.
+      const parent = Path.dirname(path);
+      const entries = await this.list(parent).catch(() => []);
+      const hit = entries.find((x) => x.path === path);
+      if (hit) return hit;
+      throw new FsError('ENOENT', 'Not found: ' + path, path);
     }
 
     async read(path, opts = {}) {

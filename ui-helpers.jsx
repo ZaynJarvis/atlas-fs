@@ -126,7 +126,8 @@ function useFsList(fs, path, opts) {
 }
 
 function useFsRead(fs, path) {
-  // Loads stat + L0/L1/L2 in parallel. UI decides which to render.
+  // Loads stat first, then file content. Optional summary levels should only be
+  // fetched from a positive capability signal, not by probing endpoints.
   const [stat, setStat] = useState(null);
   const [bundle, setBundle] = useState({ l0: null, l1: null, l2: null });
   const [loading, setLoading] = useState(false);
@@ -135,13 +136,18 @@ function useFsRead(fs, path) {
     if (!path) { setStat(null); setBundle({ l0: null, l1: null, l2: null }); return; }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     (async () => {
       try {
-        const s = await fs.stat(path).catch(() => null);
+        const s = await fs.stat(path);
         if (cancelled) return;
         setStat(s);
+        if (!s || s.type === 'directory') {
+          setBundle({ l0: null, l1: null, l2: null });
+          return;
+        }
         const results = await Promise.all(
-          ['l0', 'l1', 'l2'].map((lv) =>
+          ['l2'].map((lv) =>
             fs.read(path, { level: lv })
               .then((r) => [lv, r?.content ?? null])
               .catch(() => [lv, null])
@@ -329,7 +335,7 @@ const LEVEL_META = {
 };
 
 function Preview({ fs, path }) {
-  const { stat, bundle, loading } = useFsRead(fs, path);
+  const { stat, bundle, loading, error } = useFsRead(fs, path);
   // Which levels are present (have non-empty content)
   const available = ['l0','l1','l2'].filter((lv) => bundle[lv] != null && bundle[lv] !== '');
   // Selected levels — default to all available, preserved across path changes via key
@@ -360,6 +366,15 @@ function Preview({ fs, path }) {
             <line x1="14" y1="28" x2="22" y2="28" stroke="var(--faint)"/>
           </svg>
           <span>Select a file or folder to preview</span>
+        </div>
+      </aside>
+    );
+  }
+  if (error) {
+    return (
+      <aside className="preview">
+        <div className="preview-empty">
+          <span>Preview unavailable</span>
         </div>
       </aside>
     );
