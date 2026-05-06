@@ -48,6 +48,7 @@ function ColumnsView({ fs, selection, setSelection }) {
   const scrollRef = useR();
   useE(() => {
     const prev = prevTrailRef.current;
+    prevTrailRef.current = trail;
     if (trail.length < prev.length) {
       const removed = prev.slice(trail.length);
       setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
@@ -55,10 +56,10 @@ function ColumnsView({ fs, selection, setSelection }) {
       return () => clearTimeout(timer);
     }
     setExitCols([]);
-    prevTrailRef.current = trail;
+    if (trail.length > prev.length && scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    }
   }, [trail.join('|')]);
-  useE(() => { prevTrailRef.current = trail; }, [trail.join('|')]);
-  useE(() => { if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth; }, [trail.length]);
 
   const onPick = (colIdx, entry) => {
     const next = trail.slice(0, colIdx + 1);
