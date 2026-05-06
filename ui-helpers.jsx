@@ -253,7 +253,7 @@ function PreviewResizer() {
     if (!drag) return;
     document.body.setAttribute('data-resizing', 'true');
     const onMove = (e) => {
-      const w = Math.max(320, Math.min(window.innerWidth - 280, window.innerWidth - e.clientX));
+      const w = Math.max(320, Math.min(window.innerWidth - 360, window.innerWidth - e.clientX));
       document.documentElement.style.setProperty('--preview-w', w + 'px');
       try { localStorage.setItem('atlas-preview-w', String(w)); } catch {}
     };
@@ -277,7 +277,7 @@ function PreviewResizer() {
     <div
       className="resize-handle"
       data-dragging={drag}
-      style={{ right: 'var(--preview-w)' }}
+      style={{ right: 'var(--preview-col-w)' }}
       onMouseDown={(e) => { e.preventDefault(); setDrag(true); }}
       title="Drag to resize preview"
     />
