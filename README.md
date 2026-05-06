@@ -4,9 +4,8 @@ Two read-only filesystem navigators (Miller Columns + Tree+Detail) that plug int
 
 ## Live demo
 
-→ **https://USERNAME.github.io/REPO/**
+→ **[https://USERNAME.github.io/REPO/](https://zaynjarvis.github.io/atlas-fs/)**
 
-(Replace `USERNAME`/`REPO` after first push — see below.)
 
 ## Run locally
 
