@@ -1,0 +1,38 @@
+{
+  "id": "./Atlas.html",
+  "name": "Atlas Navigator",
+  "short_name": "Atlas",
+  "description": "A responsive Miller-columns file navigator and reader.",
+  "start_url": "./Atlas.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#161616",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./atlas-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./atlas-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./atlas-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./atlas-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

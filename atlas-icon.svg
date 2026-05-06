@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Atlas Navigator</title>
+  <desc id="desc">A Miller-columns file navigator icon with stacked panels and a highlighted folder row.</desc>
+  <defs>
+    <linearGradient id="bg" x1="80" y1="28" x2="432" y2="484" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#26211e"/>
+      <stop offset="1" stop-color="#0b0b0a"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="96" y1="92" x2="408" y2="414" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbfaf6"/>
+      <stop offset="1" stop-color="#d8d3c4"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="92" y1="154" x2="404" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d99172"/>
+      <stop offset="1" stop-color="#a05a44"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="128%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M96 118h320c24.3 0 44 19.7 44 44v188c0 24.3-19.7 44-44 44H96c-24.3 0-44-19.7-44-44V162c0-24.3 19.7-44 44-44Z" fill="#151311"/>
+  <g filter="url(#shadow)">
+    <rect x="72" y="104" width="368" height="280" rx="28" fill="#1d1a17"/>
+    <rect x="92" y="124" width="96" height="240" rx="14" fill="url(#panel)"/>
+    <rect x="204" y="124" width="104" height="240" rx="14" fill="#f1ede3"/>
+    <rect x="324" y="124" width="96" height="240" rx="14" fill="#e7e1d3"/>
+
+    <rect x="112" y="158" width="56" height="10" rx="5" fill="#a4a098"/>
+    <rect x="112" y="198" width="56" height="10" rx="5" fill="#a4a098"/>
+    <rect x="112" y="238" width="56" height="10" rx="5" fill="#a4a098"/>
+    <rect x="112" y="278" width="56" height="10" rx="5" fill="#a4a098"/>
+    <rect x="112" y="318" width="42" height="10" rx="5" fill="#a4a098"/>
+
+    <rect x="220" y="154" width="72" height="34" rx="10" fill="url(#accent)"/>
+    <path d="M235 166h20l7 8h17c5 0 9 4 9 9v1h-68v-8c0-5.5 4.5-10 10-10h5Z" fill="#ead9d1"/>
+    <rect x="220" y="212" width="64" height="10" rx="5" fill="#9b9488"/>
+    <rect x="220" y="250" width="64" height="10" rx="5" fill="#9b9488"/>
+    <rect x="220" y="288" width="46" height="10" rx="5" fill="#9b9488"/>
+
+    <path d="M350 164h36l18 18v96h-54V164Z" fill="#fbfaf6"/>
+    <path d="M386 164v18h18" fill="#d8d3c4"/>
+    <rect x="360" y="304" width="40" height="10" rx="5" fill="#9b9488"/>
+    <rect x="360" y="328" width="32" height="10" rx="5" fill="#9b9488"/>
+  </g>
+
+  <path d="M104 414h304" stroke="#a05a44" stroke-width="16" stroke-linecap="round"/>
+  <path d="M116 414h104" stroke="#ead9d1" stroke-width="16" stroke-linecap="round"/>
+</svg>
