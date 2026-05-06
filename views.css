@@ -10,6 +10,7 @@
 .columns-scroll {
   display: flex;
   overflow-x: auto;
+  scroll-behavior: smooth;
   background: var(--surface-2);
   border-right: 1px solid var(--line);
 }
@@ -19,6 +20,11 @@
   background: var(--surface);
   display: flex; flex-direction: column;
   min-height: 100%;
+  animation: col-enter 180ms ease-out;
+}
+@keyframes col-enter {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 .col:nth-child(odd) { background: var(--surface-2); }
 .col-head {
