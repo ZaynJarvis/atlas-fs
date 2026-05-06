@@ -1,7 +1,7 @@
 /* Atlas — five navigation paradigms (v2) */
 /* All views consume only the read-only FS API */
 
-const { useState: useS, useEffect: useE, useMemo: useM, useRef: useR, useCallback: useCB } = React;
+const { useState: useS, useEffect: useE, useLayoutEffect: useLE, useMemo: useM, useRef: useR, useCallback: useCB } = React;
 
 function sortEntries(entries, sortBy = 'name', sortDir = 'asc') {
   return entries.slice().sort((a, b) => {
@@ -47,38 +47,73 @@ function ColumnsView({ fs, selection, setSelection }) {
   }, [rawCols, selection.sortBy, selection.sortDir]);
 
   const scrollRef = useR();
-  useE(() => {
+  const animTimerRef = useR(null);
+  // Use useLayoutEffect so the FLIP runs before the browser paints —
+  // prevents a single-frame flash of the jumped position.
+  useLE(() => {
     const prev = prevTrailRef.current;
     prevTrailRef.current = trail;
     const el = scrollRef.current;
     const inner = innerRef.current;
 
     if (trail.length < prev.length) {
-      const removed = prev.slice(trail.length);
-      setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
+      // Cancel any in-progress animation
+      if (animTimerRef.current) {
+        clearTimeout(animTimerRef.current);
+        animTimerRef.current = null;
+        if (inner) { inner.style.transition = ''; inner.style.transform = ''; }
+      }
 
-      // FLIP: instantly jump scroll, compensate with transform, then animate
+      const removed = prev.slice(trail.length);
+
+      // Capture scroll position BEFORE React re-renders
+      const oldScroll = el ? el.scrollLeft : 0;
+
+      // Use flushSync so exit columns are committed to the DOM immediately.
+      // This ensures .columns-inner still has the full width (trail + exit cols)
+      // when we measure/apply the FLIP transform below.
+      ReactDOM.flushSync(() => {
+        setExitCols(removed.map((p) => ({ path: p, entries: cols[p] || [] })));
+      });
+
+      // FLIP: First-Last-Invert-Play
       if (el && inner) {
-        const oldScroll = el.scrollLeft;
         const targetScroll = Math.max(0, trail.length * 240 - el.clientWidth);
         const delta = oldScroll - targetScroll;
 
+        // Instantly jump scroll to the target position (no smooth behavior)
         el.style.scrollBehavior = 'auto';
         el.scrollLeft = targetScroll;
 
+        // Compensate with translateX so it visually appears nothing moved yet
         inner.style.transition = 'none';
         inner.style.transform = `translateX(${delta}px)`;
-        inner.offsetHeight; // force reflow
-        inner.style.transition = 'transform 300ms ease-out';
-        inner.style.transform = 'translateX(0)';
+
+        // Force the browser to commit the above styles before we animate
+        void inner.getBoundingClientRect();
+
+        // Schedule the animation to start on the next frame.
+        // useLayoutEffect blocks paint, so rAF fires on the very first paint —
+        // the user sees the compensated position first, then the smooth slide.
+        requestAnimationFrame(() => {
+          if (!inner) return;
+          inner.style.transition = 'transform 300ms ease-out';
+          inner.style.transform = 'translateX(0)';
+        });
       }
 
-      const timer = setTimeout(() => {
+      animTimerRef.current = setTimeout(() => {
+        animTimerRef.current = null;
         setExitCols([]);
         if (el) el.style.scrollBehavior = '';
         if (inner) { inner.style.transition = ''; inner.style.transform = ''; }
-      }, 300);
-      return () => clearTimeout(timer);
+      }, 320);
+      return () => {
+        if (animTimerRef.current) {
+          clearTimeout(animTimerRef.current);
+          animTimerRef.current = null;
+        }
+      };
     }
 
     setExitCols([]);
