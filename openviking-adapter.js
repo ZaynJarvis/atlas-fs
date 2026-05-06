@@ -226,6 +226,10 @@
     }
 
     async search(query, opts = {}) {
+      return this.find(query, opts);
+    }
+
+    async find(query, opts = {}) {
       const { limit = 50, root = '/' } = opts;
       if (!query) return [];
       const body = { query, limit };
@@ -237,15 +241,63 @@
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        const hits = data.result || data.hits || data || [];
-        return (Array.isArray(hits) ? hits : []).map((h) => ({
+        const r = data.result || {};
+        const all = [...(r.resources || []), ...(r.memories || [])];
+        return all.map((h) => ({
           path: h.uri ? uriToPath(h.uri) : (h.path || ''),
           name: h.name || Path.basename(h.uri ? uriToPath(h.uri) : (h.path || '')),
           type: h.isDir ? 'directory' : 'file',
           score: h.score ?? 0,
-          snippet: h.snippet || h.abstract || null,
+          snippet: h.abstract || h.snippet || null,
           line: null,
         }));
+      } catch {
+        return [];
+      }
+    }
+
+    async grep(pattern, opts = {}) {
+      const { limit = 200, root = '/' } = opts;
+      if (!pattern) return [];
+      const uri = pathToUri(root === '/' ? '/' : root);
+      const body = { uri, pattern, limit };
+      try {
+        const res = await this._req('/api/v1/search/grep', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        const matches = (data.result && data.result.matches) || [];
+        return matches.map((m) => ({
+          uri: uriToPath(m.uri),
+          line: m.line,
+          content: m.content,
+        }));
+      } catch {
+        return [];
+      }
+    }
+
+    async glob(pattern, opts = {}) {
+      const { limit = 500, root = '/' } = opts;
+      if (!pattern) return [];
+      const uri = pathToUri(root === '/' ? '/' : root);
+      const body = { uri, pattern, limit };
+      try {
+        const res = await this._req('/api/v1/search/glob', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        const matches = (data.result && data.result.matches) || [];
+        return matches.map((u) => {
+          const cleaned = u.startsWith('viking:/') && !u.startsWith('viking://')
+            ? 'viking://' + u.slice('viking:/'.length)
+            : u;
+          return uriToPath(cleaned);
+        });
       } catch {
         return [];
       }

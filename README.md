@@ -6,7 +6,6 @@ Two read-only filesystem navigators (Miller Columns + Tree+Detail) that plug int
 
 → **[https://zaynjarvis.github.io/atlas-fs/](https://zaynjarvis.github.io/atlas-fs/)**
 
-
 ## Run locally
 
 It's a static site. Open `Atlas.html` directly, or:

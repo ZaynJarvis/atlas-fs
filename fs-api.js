@@ -164,6 +164,9 @@ class FileSystem {
   async read(path, opts = {})    { throw new Error('read() not implemented'); }
   async exists(path)             { try { await this.stat(path); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } }
   async search(query, opts = {}) { throw new Error('search() not implemented'); }
+  async find(query, opts = {})   { return []; }
+  async grep(pattern, opts = {}) { return []; }
+  async glob(pattern, opts = {}) { return []; }
   async resolve(path)            { return Path.normalize(path); }
   watch(path, callback)          { return () => {}; }
 
@@ -372,6 +375,73 @@ class InMemoryFs extends FileSystem {
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, limit);
   }
+
+  async find(query, opts = {}) {
+    return this.search(query, { ...opts, includeContent: false });
+  }
+
+  async grep(pattern, opts = {}) {
+    const { root = '/', limit = 200, ignoreCase = false } = opts;
+    if (!pattern) return [];
+    let re;
+    try { re = new RegExp(pattern, ignoreCase ? 'i' : ''); }
+    catch (e) { throw new FsError('EINVAL', 'Bad regex: ' + e.message, ''); }
+    const out = [];
+    const visit = (node) => {
+      if (out.length >= limit) return;
+      if (node.type === 'file' && node.content) {
+        const lines = node.content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (re.test(lines[i])) {
+            out.push({ uri: node.path, line: i + 1, content: lines[i] });
+            if (out.length >= limit) return;
+          }
+        }
+      } else if (node.type === 'directory') {
+        for (const c of Object.values(node.children)) visit(c);
+      }
+    };
+    visit(this._resolveNode(root, true));
+    return out;
+  }
+
+  async glob(pattern, opts = {}) {
+    const { root = '/', limit = 500 } = opts;
+    if (!pattern) return [];
+    const re = globToRegex(pattern);
+    const out = [];
+    const visit = (node) => {
+      if (out.length >= limit) return;
+      if (node.path !== '/' && re.test(node.path)) out.push(node.path);
+      if (node.type === 'directory') {
+        for (const c of Object.values(node.children)) visit(c);
+      }
+    };
+    visit(this._resolveNode(root, true));
+    return out;
+  }
+}
+
+function globToRegex(glob) {
+  let re = '^';
+  let i = 0;
+  while (i < glob.length) {
+    const c = glob[i];
+    if (c === '*' && glob[i + 1] === '*') {
+      re += '.*'; i += 2;
+      if (glob[i] === '/') i++;
+    } else if (c === '*') {
+      re += '[^/]*'; i++;
+    } else if (c === '?') {
+      re += '[^/]'; i++;
+    } else if ('.+()|^$\\{}[]'.includes(c)) {
+      re += '\\' + c; i++;
+    } else {
+      re += c; i++;
+    }
+  }
+  re += '$';
+  return new RegExp(re);
 }
 
 // ---------- Public exports ----------
@@ -381,6 +451,7 @@ window.FS = {
   FsError,
   Path,
   detectMime,
+  globToRegex,
   // Adapter-creation helper signatures (stubs to make extension obvious)
   // Uncomment & implement when wiring real backends:
   //   createFsAccessAdapter(directoryHandle): FileSystem

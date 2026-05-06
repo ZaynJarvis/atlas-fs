@@ -9,6 +9,7 @@ const { useState: useS, useEffect: useE, useMemo: useM, useRef: useR, useCallbac
 function ColumnsView({ fs, selection, setSelection }) {
   const trail = selection.trail;
   const [cols, setCols] = useS({});
+  const wrapRef = useR();
   useE(() => {
     let alive = true;
     Promise.all(trail.map((p) => fs.list(p, { sortBy: 'name' }).catch(() => [])))
@@ -33,8 +34,59 @@ function ColumnsView({ fs, selection, setSelection }) {
     }
   };
 
+  const activeColIdx = trail.length - 1;
+  const activeColPath = trail[activeColIdx];
+  const activeEntries = cols[activeColPath] || [];
+  const selectedChildPath = selection.file || trail[activeColIdx + 1] || null;
+  const activeIdx = Math.max(0, activeEntries.findIndex((e) => e.path === selectedChildPath));
+
+  useE(() => {
+    const onKey = (e) => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+      if (document.querySelector('.search-overlay')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!activeEntries.length) return;
+        e.preventDefault();
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        const next = Math.max(0, Math.min(activeEntries.length - 1, activeIdx + dir));
+        const entry = activeEntries[next];
+        const newTrail = trail.slice(0, activeColIdx + 1);
+        if (entry.type === 'directory') {
+          setSelection({ ...selection, trail: newTrail, file: null, dir: entry.path, focus: entry.path });
+        } else {
+          setSelection({ ...selection, trail: newTrail, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: entry.path });
+        }
+      } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        const entry = activeEntries[activeIdx];
+        if (!entry) return;
+        e.preventDefault();
+        if (entry.type === 'directory') {
+          const next = trail.slice(0, activeColIdx + 1);
+          next.push(entry.path);
+          setSelection({ ...selection, trail: next, file: null, dir: entry.path });
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (trail.length <= 1) return;
+        e.preventDefault();
+        const newTrail = trail.slice(0, -1);
+        const parent = newTrail[newTrail.length - 1];
+        setSelection({ ...selection, trail: newTrail, dir: parent, file: null });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeEntries, activeIdx, trail.join('|'), selection.file]);
+
+  useE(() => {
+    const el = wrapRef.current?.querySelector('.col:last-child .fs-row[data-selected="true"]');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [selection.file, selection.dir, trail.length]);
+
   return (
-    <div className="view-columns">
+    <div className="view-columns" ref={wrapRef}>
       <div className="columns-scroll scroll" ref={scrollRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
@@ -71,6 +123,7 @@ function ColumnsView({ fs, selection, setSelection }) {
 function TreeView({ fs, selection, setSelection }) {
   const [expanded, setExpanded] = useS(() => new Set(['/', '/src']));
   const [childCache, setChildCache] = useS({});
+  const treeWrapRef = useR();
   useE(() => {
     const need = [...expanded].filter((p) => !childCache[p]);
     if (!need.length) return;
@@ -79,6 +132,80 @@ function TreeView({ fs, selection, setSelection }) {
   }, [[...expanded].join('|')]);
 
   const toggle = (p) => setExpanded((prev) => { const next = new Set(prev); if (next.has(p)) next.delete(p); else next.add(p); return next; });
+
+  const flatVisible = useM(() => {
+    const out = [];
+    const walk = (entries, depth) => {
+      for (const e of entries) {
+        out.push({ entry: e, depth });
+        if (e.type === 'directory' && expanded.has(e.path)) {
+          walk(childCache[e.path] || [], depth + 1);
+        }
+      }
+    };
+    walk(childCache['/'] || [], 0);
+    return out;
+  }, [expanded, childCache]);
+
+  const currentPath = selection.file || selection.dir;
+  const currentIdx = Math.max(0, flatVisible.findIndex((n) => n.entry.path === currentPath));
+
+  useE(() => {
+    const onKey = (e) => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+      if (document.querySelector('.search-overlay')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!flatVisible.length) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        const next = Math.max(0, Math.min(flatVisible.length - 1, currentIdx + dir));
+        const node = flatVisible[next];
+        if (node.entry.type === 'directory') {
+          setSelection({ ...selection, dir: node.entry.path, file: null });
+        } else {
+          setSelection({ ...selection, file: node.entry.path, dir: window.FS.Path.dirname(node.entry.path) });
+        }
+      } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        const node = flatVisible[currentIdx];
+        if (!node) return;
+        if (node.entry.type === 'directory') {
+          e.preventDefault();
+          if (!expanded.has(node.entry.path)) {
+            setExpanded((prev) => new Set([...prev, node.entry.path]));
+          } else {
+            const kids = childCache[node.entry.path] || [];
+            if (kids.length) {
+              const k = kids[0];
+              if (k.type === 'directory') setSelection({ ...selection, dir: k.path, file: null });
+              else setSelection({ ...selection, file: k.path, dir: window.FS.Path.dirname(k.path) });
+            }
+          }
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const node = flatVisible[currentIdx];
+        if (!node) return;
+        if (node.entry.type === 'directory' && expanded.has(node.entry.path)) {
+          setExpanded((prev) => { const n = new Set(prev); n.delete(node.entry.path); return n; });
+        } else {
+          const parent = window.FS.Path.dirname(node.entry.path);
+          if (parent && parent !== '/') {
+            setSelection({ ...selection, dir: parent, file: null });
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flatVisible, currentIdx, expanded, childCache, selection.file, selection.dir]);
+
+  useE(() => {
+    const el = treeWrapRef.current?.querySelector('.tree-node[data-selected="true"]');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [currentPath]);
 
   const renderNode = (entry, depth) => {
     if (entry.type !== 'directory') {
@@ -114,7 +241,7 @@ function TreeView({ fs, selection, setSelection }) {
   const arrow = (key) => selection.sortBy === key ? (selection.sortDir === 'desc' ? '↓' : '↑') : '';
 
   return (
-    <div className="view-tree">
+    <div className="view-tree" ref={treeWrapRef}>
       <div className="tree-pane">
         <div className="tree-head">Workspace</div>
         <div className="tree-body scroll">

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="views.css">
 <link rel="stylesheet" href="renderers.css">
+<link rel="stylesheet" href="search-overlay.css">
 
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -19,6 +20,7 @@
 <script type="text/babel" src="renderers.jsx"></script>
 <script type="text/babel" src="ui-helpers.jsx"></script>
 <script type="text/babel" src="views.jsx"></script>
+<script type="text/babel" src="search-overlay.jsx"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -133,12 +135,20 @@ function App() {
     document.documentElement.style.setProperty('--accent-soft', soft);
   }, [tweaks]);
 
-  // Cycle paradigms with cmd/ctrl-1..5
+  // Cycle paradigms with cmd/ctrl-1..5; ⌘F opens search
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState('find');
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && /^[1-2]$/.test(e.key)) {
         e.preventDefault();
         setParadigm(PARADIGMS[parseInt(e.key, 10) - 1].key);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
       }
     };
     window.addEventListener('keydown', onKey);
@@ -246,11 +256,41 @@ function App() {
         <View fs={fs} selection={selection} setSelection={setSelection} />
       </div>
 
+      {searchOpen && (
+        <window.SearchOverlay
+          fs={fs}
+          scope={selection.dir || '/'}
+          initialMode={searchMode}
+          onClose={() => setSearchOpen(false)}
+          onPick={(path, line) => {
+            const isDir = path.endsWith('/') || !window.FS.Path.basename(path).includes('.');
+            // Best effort: stat to know
+            (async () => {
+              try {
+                const st = await fs.stat(path);
+                if (st.type === 'directory') {
+                  const segs = window.FS.Path.ancestors(path);
+                  setSelection((s) => ({ ...s, trail: segs, dir: path, file: null }));
+                } else {
+                  const dir = window.FS.Path.dirname(path);
+                  const segs = window.FS.Path.ancestors(dir);
+                  setSelection((s) => ({ ...s, trail: segs, dir, file: path, focus: line }));
+                }
+              } catch {
+                const dir = window.FS.Path.dirname(path);
+                const segs = window.FS.Path.ancestors(dir);
+                setSelection((s) => ({ ...s, trail: segs, dir, file: path, focus: line }));
+              }
+            })();
+          }}
+        />
+      )}
+
       <footer className="statusbar">
         <span className="key"><kbd>⌘1</kbd>–<kbd>⌘2</kbd> switch view</span>
+        <span className="key"><kbd>⌘F</kbd> search</span>
         <span className="key"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-        <span className="key"><kbd>↵</kbd> open</span>
-        <span className="key"><kbd>tab</kbd> toggle search mode</span>
+        <span className="key"><kbd>→</kbd> open · <kbd>←</kbd> back</span>
         <span style={{flex: 1}}></span>
         <span>{cur.label} — {cur.desc}</span>
       </footer>
