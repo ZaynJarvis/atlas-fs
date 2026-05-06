@@ -370,13 +370,15 @@ function Preview({ fs, path }) {
     <aside className="preview">
       <div className="preview-head">
         <EntryIcon entry={stat} />
-        <div className="name">{stat.name === '/' ? '/' : stat.name}</div>
-        <span style={{flex:1}}></span>
+        <div className="preview-title">
+          <div className="name">{stat.name === '/' ? '/' : stat.name}</div>
+          <div className="preview-head-modified">{formatAbsTime(stat.mtime)}</div>
+        </div>
         {stat.language && <span className="lang-badge">{stat.language}</span>}
       </div>
       <div className="preview-meta">
-        <div className="pair"><span>modified</span><b>{formatAbsTime(stat.mtime)}</b></div>
-        <div className="pair"><span>path</span><b style={{fontFamily:'var(--mono)', fontSize: 11}}>{stat.path}</b></div>
+        <div className="pair preview-modified"><span>modified</span><b>{formatAbsTime(stat.mtime)}</b></div>
+        <div className="pair preview-path"><span>path</span><b style={{fontFamily:'var(--mono)', fontSize: 11}}>{stat.path}</b></div>
       </div>
       {available.length > 0 && (
         <div className="preview-levels">

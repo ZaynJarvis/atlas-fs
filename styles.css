@@ -300,12 +300,19 @@ input { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
   display: flex; align-items: center; gap: var(--s-3);
 }
+.preview-title {
+  flex: 1;
+  min-width: 0;
+}
 .preview-head .name {
   font-family: var(--serif);
   font-size: 18px;
   font-weight: 500;
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.preview-head-modified {
+  display: none;
 }
 .preview-meta {
   display: flex; gap: var(--s-4);
@@ -660,6 +667,28 @@ body[data-resizing-y="true"] * {
   }
   .statusbar .key {
     margin-right: 6px;
+  }
+  .preview-head {
+    padding: 7px var(--s-3);
+    gap: var(--s-2);
+  }
+  .preview-head .name {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+  .preview-head-modified {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preview-meta {
+    display: none;
   }
   .resize-handle {
     display: none;
