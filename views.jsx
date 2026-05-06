@@ -50,16 +50,16 @@ function ColumnsView({ fs, selection, setSelection }) {
     const next = trail.slice(0, colIdx + 1);
     if (entry.type === 'directory') {
       next.push(entry.path);
-      setSelection({ ...selection, trail: next, file: null, dir: entry.path });
+      setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
     } else {
-      setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path) });
+      setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: null });
     }
   };
 
   const activeColIdx = trail.length - 1;
   const activeColPath = trail[activeColIdx];
   const activeEntries = cols[activeColPath] || [];
-  const selectedChildPath = selection.file || trail[activeColIdx + 1] || null;
+  const selectedChildPath = selection.file || trail[activeColIdx + 1] || selection.focus || null;
   const activeIdx = Math.max(0, activeEntries.findIndex((e) => e.path === selectedChildPath));
 
   useE(() => {
@@ -88,31 +88,33 @@ function ColumnsView({ fs, selection, setSelection }) {
         if (entry.type === 'directory') {
           const next = trail.slice(0, activeColIdx + 1);
           next.push(entry.path);
-          setSelection({ ...selection, trail: next, file: null, dir: entry.path });
+          setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
         }
       } else if (e.key === 'ArrowLeft') {
         if (trail.length <= 1) return;
         e.preventDefault();
+        const leaving = trail[trail.length - 1];
         const newTrail = trail.slice(0, -1);
         const parent = newTrail[newTrail.length - 1];
-        setSelection({ ...selection, trail: newTrail, dir: parent, file: null });
+        setSelection({ ...selection, trail: newTrail, dir: parent, file: null, focus: leaving });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeEntries, activeIdx, trail.join('|'), selection.file]);
+  }, [activeEntries, activeIdx, trail.join('|'), selection.file, selection.focus]);
 
   useE(() => {
     const el = wrapRef.current?.querySelector('.col:last-child .fs-row[data-selected="true"]');
     if (el) el.scrollIntoView({ block: 'nearest' });
-  }, [selection.file, selection.dir, trail.length]);
+  }, [selection.file, selection.focus, trail.length]);
 
   return (
     <div className="view-columns" ref={wrapRef}>
       <div className="columns-scroll scroll" ref={scrollRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
-          const selectedChild = trail[i + 1] || (i === trail.length - 1 ? selection.file : null);
+          const isLast = i === trail.length - 1;
+          const selectedChild = trail[i + 1] || (isLast ? (selection.file || selection.focus || (entries[0] && entries[0].path)) : null);
           return (
             <div className="col" key={path + ':' + i}>
               <div className="col-head">
