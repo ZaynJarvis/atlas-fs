@@ -22,7 +22,7 @@ function sortEntries(entries, sortBy = 'name', sortDir = 'asc') {
 // ============================================================
 const COLUMN_W = 240;
 
-function ColumnsView({ fs, selection, setSelection }) {
+function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
   const trail = selection.trail;
   const [rawCols, setRawCols] = useS({});
   const wrapRef = useR();
@@ -184,7 +184,15 @@ function ColumnsView({ fs, selection, setSelection }) {
   const selectedChildPath = selection.file || trail[activeColIdx + 1] || focusPath || null;
   const activeIdx = Math.max(0, activeEntries.findIndex((e) => e.path === selectedChildPath));
   const highlightedPath = selectedChildPath || (activeEntries[0] && activeEntries[0].path) || null;
+  const highlightedEntry = activeEntries.find((e) => e.path === highlightedPath) || null;
+  const highlightedDirectory = highlightedEntry?.type === 'directory'
+    ? highlightedEntry.path
+    : (selection.dir || activeColPath || '/');
   const previewPath = selection.file || focusPath || highlightedPath || selection.dir;
+
+  useE(() => {
+    if (onSearchScopeChange) onSearchScopeChange(highlightedDirectory || '/');
+  }, [highlightedDirectory, onSearchScopeChange]);
 
   useE(() => {
     const onKey = (e) => {
@@ -414,7 +422,7 @@ function TreeSplitResizer() {
 // ============================================================
 // 2. TREE + DETAIL
 // ============================================================
-function TreeView({ fs, selection, setSelection }) {
+function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
   const [expanded, setExpanded] = useS(() => new Set(['/', '/src']));
   const [childCache, setChildCache] = useS({});
   const treeWrapRef = useR();
@@ -451,6 +459,14 @@ function TreeView({ fs, selection, setSelection }) {
 
   const currentPath = selection.file || selection.dir;
   const currentIdx = Math.max(0, flatVisible.findIndex((n) => n.entry.path === currentPath));
+  const currentNode = flatVisible.find((n) => n.entry.path === currentPath);
+  const highlightedDirectory = currentNode?.entry.type === 'directory'
+    ? currentNode.entry.path
+    : (selection.dir || '/');
+
+  useE(() => {
+    if (onSearchScopeChange) onSearchScopeChange(highlightedDirectory || '/');
+  }, [highlightedDirectory, onSearchScopeChange]);
 
   useE(() => {
     const onKey = (e) => {

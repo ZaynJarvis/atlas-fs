@@ -46,6 +46,22 @@
     return 'EIO';
   }
 
+  function truthyFlag(value) {
+    return value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true';
+  }
+
+  function isDirectoryEntry(entry) {
+    const type = String(entry.type || entry.kind || entry.nodeType || '').toLowerCase();
+    const uri = entry.uri || entry.path || '';
+    return truthyFlag(entry.isDir)
+      || truthyFlag(entry.is_dir)
+      || truthyFlag(entry.isdir)
+      || type === 'directory'
+      || type === 'dir'
+      || type === 'folder'
+      || uri.endsWith('/');
+  }
+
   class OpenVikingFs extends FileSystem {
     /**
      * @param {object} opts
@@ -173,7 +189,7 @@
     _normalize(entry, parentPath) {
       // Defensive — different OpenViking versions emit slightly different fields.
       const name = entry.name ?? Path.basename(uriToPath(entry.uri || entry.path || ''));
-      const isDir = entry.isDir ?? entry.is_dir ?? entry.type === 'directory';
+      const isDir = isDirectoryEntry(entry);
       const path = entry.uri ? uriToPath(entry.uri) : Path.join(parentPath, name);
       const det = detectMime(name);
       const rawMtime = entry.mtime || entry.modTime;
@@ -226,8 +242,9 @@
     }
 
     async read(path, opts = {}) {
-      const { maxBytes = 256 * 1024, encoding = 'utf-8', level = 'l2' } = opts;
-      const uri = pathToUri(path);
+      const { maxBytes = 256 * 1024, encoding = 'utf-8', level = 'l2', isDirectory = false } = opts;
+      let uri = pathToUri(path);
+      if (isDirectory && uri !== VIKING_PROTOCOL && !uri.endsWith('/')) uri += '/';
       // OpenViking uses /api/v1/content/* for content reads.
       // level: 'l0' (abstract), 'l1' (overview), 'l2' (full content)
       const endpoint = level === 'l0' ? 'abstract' : level === 'l1' ? 'overview' : 'read';
@@ -238,8 +255,11 @@
         const data = await res.json();
         const r = data.result;
         if (typeof r === 'string') content = r;
-        else if (r && typeof r === 'object') content = r.content ?? r.text ?? JSON.stringify(r, null, 2);
-        else content = data.content ?? '';
+        else if (r && typeof r === 'object') {
+          content = r.content ?? r.text ?? r.markdown ?? r.abstract ?? r.overview ?? r.summary ?? JSON.stringify(r, null, 2);
+        } else {
+          content = data.content ?? data.text ?? data.markdown ?? data.abstract ?? data.overview ?? data.summary ?? '';
+        }
       } else {
         content = await res.text();
       }
@@ -277,7 +297,7 @@
         return all.map((h) => ({
           path: h.uri ? uriToPath(h.uri) : (h.path || ''),
           name: h.name || Path.basename(h.uri ? uriToPath(h.uri) : (h.path || '')),
-          type: h.isDir ? 'directory' : 'file',
+          type: isDirectoryEntry(h) ? 'directory' : 'file',
           score: h.score ?? 0,
           snippet: h.abstract || h.snippet || null,
           line: null,

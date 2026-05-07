@@ -28,7 +28,13 @@ const SEARCH_MODES = [
   },
 ];
 
+function normalizeSearchScope(path) {
+  if (typeof path !== 'string' || !path.startsWith('/')) return '/';
+  return window.FS.Path.normalize(path);
+}
+
 function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode = 'find' }) {
+  const initialScopePath = _uM(() => normalizeSearchScope(initialScope), [initialScope]);
   const [mode, setMode] = _uS(initialMode);
   const [query, setQuery] = _uS('');
   const [results, setResults] = _uS([]);
@@ -38,19 +44,25 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
   const inputRef = _uR();
   const listRef = _uR();
 
-  // Scope: local state, default to /resources, cycle through top-level dirs
-  const [dirs, setDirs] = _uS(['/']);
-  const [scope, setScope] = _uS('/resources');
+  // Scope: default to the active browser highlight, but keep root dirs in the cycle.
+  const [dirs, setDirs] = _uS([initialScopePath]);
+  const [scope, setScope] = _uS(initialScopePath);
   _uE(() => {
+    let alive = true;
     (async () => {
       try {
         const entries = await fs.list('/');
-        const d = ['/', ...entries.filter((e) => e.type === 'directory').map((e) => e.path)];
+        if (!alive) return;
+        const rootDirs = ['/', ...entries.filter((e) => e.type === 'directory').map((e) => e.path)];
+        const d = rootDirs.includes(initialScopePath)
+          ? rootDirs
+          : [initialScopePath, ...rootDirs];
         setDirs(d);
-        if (!d.includes(scope)) setScope(d.includes('/resources') ? '/resources' : d[0]);
+        setScope((cur) => d.includes(cur) ? cur : initialScopePath);
       } catch {}
     })();
-  }, [fs]);
+    return () => { alive = false; };
+  }, [fs, initialScopePath]);
 
   const cycleScope = (dir) => {
     setScope((cur) => {

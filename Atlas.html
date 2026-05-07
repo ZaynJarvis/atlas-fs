@@ -23,19 +23,19 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=6').catch(() => {});
   });
 }
 </script>
 
 <script src="fs-api.js"></script>
 <script src="mock-data.js"></script>
-<script src="openviking-adapter.js"></script>
+<script src="openviking-adapter.js?v=6"></script>
 <script type="text/babel" src="tweaks-panel.jsx"></script>
 <script type="text/babel" src="renderers.jsx"></script>
-<script type="text/babel" src="ui-helpers.jsx"></script>
-<script type="text/babel" src="views.jsx"></script>
-<script type="text/babel" src="search-overlay.jsx"></script>
+<script type="text/babel" src="ui-helpers.jsx?v=6"></script>
+<script type="text/babel" src="views.jsx?v=6"></script>
+<script type="text/babel" src="search-overlay.jsx?v=6"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -77,6 +77,7 @@ function App() {
   const [paradigm, setParadigm] = useState('columns');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [searchScope, setSearchScope] = useState('/');
   const [selection, setSelection] = useState(() => {
     let sortBy = 'name', sortDir = 'asc';
     try {
@@ -104,6 +105,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     setConn({ status: 'connecting', error: null });
+    setSearchScope('/');
     setSelection((s) => ({ ...s, trail: ['/'], dir: '/', file: null, focus: null }));
     (async () => {
       try {
@@ -282,7 +284,7 @@ function App() {
       )}
 
       <div className="workspace">
-        <View fs={fs} selection={selection} setSelection={setSelection} />
+        <View fs={fs} selection={selection} setSelection={setSelection} onSearchScopeChange={setSearchScope} />
       </div>
 
       <footer className="statusbar control-footer" aria-label="Keyboard controls">
@@ -299,7 +301,7 @@ function App() {
       {searchOpen && (
         <window.SearchOverlay
           fs={fs}
-          scope={selection.dir || '/'}
+          scope={searchScope || selection.dir || '/'}
           initialMode={searchMode}
           onClose={() => setSearchOpen(false)}
           onPick={(path, line) => {

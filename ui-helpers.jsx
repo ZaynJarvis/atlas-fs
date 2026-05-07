@@ -126,8 +126,7 @@ function useFsList(fs, path, opts) {
 }
 
 function useFsRead(fs, path) {
-  // Loads stat first, then file content. Optional summary levels should only be
-  // fetched from a positive capability signal, not by probing endpoints.
+  // Loads stat first, then available preview levels. Each level is optional.
   const [stat, setStat] = useState(null);
   const [bundle, setBundle] = useState({ l0: null, l1: null, l2: null });
   const [loading, setLoading] = useState(false);
@@ -142,13 +141,10 @@ function useFsRead(fs, path) {
         const s = await fs.stat(path);
         if (cancelled) return;
         setStat(s);
-        if (!s || s.type === 'directory') {
-          setBundle({ l0: null, l1: null, l2: null });
-          return;
-        }
+        const levels = s?.type === 'directory' ? ['l0', 'l1'] : ['l0', 'l1', 'l2'];
         const results = await Promise.all(
-          ['l2'].map((lv) =>
-            fs.read(path, { level: lv })
+          levels.map((lv) =>
+            fs.read(path, { level: lv, isDirectory: s?.type === 'directory' })
               .then((r) => [lv, r?.content ?? null])
               .catch(() => [lv, null])
           )
