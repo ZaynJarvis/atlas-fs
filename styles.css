@@ -126,7 +126,7 @@ input { font: inherit; color: inherit; }
 /* ---------- App shell ---------- */
 .app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   position: fixed;
   inset: 0;
   background: var(--bg);
