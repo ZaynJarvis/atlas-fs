@@ -246,9 +246,28 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [selection.file, selection.focus, trail.length]);
 
+  const onColumnsWheel = (e) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const delta = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+    if (!delta) return;
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    if (!maxScroll) return;
+    const next = Math.max(0, Math.min(maxScroll, el.scrollLeft + delta));
+    if (next === el.scrollLeft) return;
+    el.scrollLeft = next;
+    lastScrollRef.current = next;
+    e.preventDefault();
+  };
+
   return (
     <div className="view-columns" ref={wrapRef}>
-      <div className="columns-scroll scroll" ref={scrollRef} onScroll={(e) => { lastScrollRef.current = e.currentTarget.scrollLeft; }}>
+      <div
+        className="columns-scroll scroll"
+        ref={scrollRef}
+        onScroll={(e) => { lastScrollRef.current = e.currentTarget.scrollLeft; }}
+        onWheel={onColumnsWheel}
+      >
         <div className="columns-inner" ref={innerRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
