@@ -80,33 +80,13 @@
       this.timeoutMs = opts.timeoutMs ?? 15000;
       this._listCache = new Map();
       this._statCache = new Map();
-      this._persistTimer = null;
-      this._restoreListCache();
+      this._dropPersistedListCache();
     }
 
     _lsKey() { return 'atlas-fs-cache:' + this.url; }
 
-    _restoreListCache() {
-      try {
-        const raw = localStorage.getItem(this._lsKey());
-        if (!raw) return;
-        const saved = JSON.parse(raw);
-        for (const [path, entries] of Object.entries(saved)) {
-          this._listCache.set(path, { entries, expires: Date.now() + 60000 });
-          for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 60000 });
-        }
-      } catch {}
-    }
-
-    _schedulePersist() {
-      clearTimeout(this._persistTimer);
-      this._persistTimer = setTimeout(() => {
-        try {
-          const out = {};
-          for (const [path, { entries }] of this._listCache) out[path] = entries;
-          localStorage.setItem(this._lsKey(), JSON.stringify(out));
-        } catch {}
-      }, 30000);
+    _dropPersistedListCache() {
+      try { localStorage.removeItem(this._lsKey()); } catch {}
     }
 
     _headers(extra = {}) {
@@ -153,17 +133,17 @@
      * Some servers return { entries: [...] }. We accept both.
      */
     async list(path, opts = {}) {
+      const refresh = truthyFlag(opts.refresh) || truthyFlag(opts.forceRefresh) || truthyFlag(opts.noCache);
       const cached = this._listCache.get(path);
-      if (cached && cached.expires > Date.now()) return this._applyOpts(cached.entries, opts);
+      if (!refresh && cached && cached.expires > Date.now()) return this._applyOpts(cached.entries, opts);
       const uri = pathToUri(path) + (path.endsWith('/') || path === '/' ? '' : '/');
       const url = `/api/v1/fs/ls?uri=${encodeURIComponent(uri)}`;
-      const res = await this._req(url);
+      const res = await this._req(url, refresh ? { cache: 'no-store' } : {});
       const data = await res.json();
       const raw = data.result || data.entries || data || [];
       const entries = (Array.isArray(raw) ? raw : []).map((e) => this._normalize(e, path));
       this._listCache.set(path, { entries, expires: Date.now() + 5000 });
       for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 5000 });
-      this._schedulePersist();
       return this._applyOpts(entries, opts);
     }
 
@@ -248,7 +228,7 @@
       // OpenViking uses /api/v1/content/* for content reads.
       // level: 'l0' (abstract), 'l1' (overview), 'l2' (full content)
       const endpoint = level === 'l0' ? 'abstract' : level === 'l1' ? 'overview' : 'read';
-      const res = await this._req(`/api/v1/content/${endpoint}?uri=${encodeURIComponent(uri)}`);
+      const res = await this._req(`/api/v1/content/${endpoint}?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
       const ct = res.headers.get('content-type') || '';
       let content = '';
       if (ct.includes('application/json')) {
@@ -411,7 +391,6 @@
     invalidate() {
       this._listCache.clear();
       this._statCache.clear();
-      clearTimeout(this._persistTimer);
     }
   }
 
