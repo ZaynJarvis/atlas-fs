@@ -1,16 +1,16 @@
-const CACHE_NAME = 'atlas-pwa-v11';
+const CACHE_NAME = 'atlas-pwa-v12';
 const CDN_ORIGINS = new Set(['https://unpkg.com']);
 const APP_SHELL = [
   './Atlas.html',
   './styles.css',
   './views.css',
-  './renderers.css',
+  './renderers.css?v=12',
   './search-overlay.css',
   './fs-api.js',
   './mock-data.js',
   './openviking-adapter.js?v=11',
   './tweaks-panel.jsx',
-  './renderers.jsx',
+  './renderers.jsx?v=12',
   './ui-helpers.jsx?v=11',
   './views.jsx?v=11',
   './search-overlay.jsx?v=11',

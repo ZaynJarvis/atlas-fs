@@ -306,15 +306,94 @@ function renderJson(text) {
 }
 
 // ---------- JSONL renderer ----------
-function JsonlRow({ line, index }) {
+const JSONL_MESSAGE_PREVIEW_LIMIT = 720;
+
+function parseJsonlRecords(text) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line, index) => ({ line, index }))
+    .filter((r) => r.line.trim().length > 0)
+    .map((r) => {
+      try {
+        return { ...r, parsed: JSON.parse(r.line), err: null };
+      } catch (err) {
+        return { ...r, parsed: null, err };
+      }
+    });
+}
+
+function formatJsonlPart(part) {
+  if (typeof part === 'string') return part;
+  if (!part || typeof part !== 'object') return JSON.stringify(part);
+  if (typeof part.text === 'string') return part.text;
+  const payload = { ...part };
+  delete payload.type;
+  const type = part.type || 'part';
+  const body = Object.keys(payload).length ? JSON.stringify(payload, null, 2) : '';
+  return body ? `[${type}]\n${body}` : `[${type}]`;
+}
+
+function getJsonlMessage(record) {
+  const { parsed, err, line, index } = record;
+  if (err || !parsed || typeof parsed !== 'object') {
+    return {
+      id: '',
+      role: 'invalid',
+      roleId: '',
+      label: 'invalid',
+      kind: 'invalid',
+      lineNo: index + 1,
+      time: '',
+      text: line,
+      toolName: '',
+    };
+  }
+
+  const role = String(parsed.role || 'message');
+  const parts = Array.isArray(parsed.parts) ? parsed.parts : [];
+  const text = parts.length ? parts.map(formatJsonlPart).join('\n\n') : JSON.stringify(parsed, null, 2);
+  const toolCall = text.match(/^\[tool:\s*([^\]]+)\]/);
+  const toolResult = /^\[tool result\]/.test(text);
+  const kind = toolResult ? 'tool-result' : role === 'user' ? 'user' : role === 'assistant' ? 'assistant' : 'other';
+
+  return {
+    id: parsed.id || '',
+    role,
+    roleId: parsed.role_id || '',
+    label: toolResult ? 'user-toolcall' : role,
+    kind,
+    lineNo: index + 1,
+    time: parsed.created_at || '',
+    text,
+    toolName: toolCall ? toolCall[1] : '',
+  };
+}
+
+function formatJsonlTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function JsonlRow({ record, line, index }) {
   const [open, setOpen] = useState(false);
-  let parsed = null;
-  let err = null;
-  try { parsed = JSON.parse(line); } catch (e) { err = e; }
+  const row = record || { line, index };
+  let parsed = row.parsed ?? null;
+  let err = row.err ?? null;
+  if (!record) {
+    try { parsed = JSON.parse(line); } catch (e) { err = e; }
+  }
 
   // Pull a sensible 1-line summary
   const summary = useMemo(() => {
-    if (err) return line.length > 200 ? line.slice(0, 200) + '…' : line;
+    if (err) return row.line.length > 200 ? row.line.slice(0, 200) + '…' : row.line;
     if (parsed === null) return 'null';
     if (typeof parsed !== 'object') return JSON.stringify(parsed);
     if (Array.isArray(parsed)) return `[${parsed.length}]`;
@@ -334,18 +413,18 @@ function JsonlRow({ line, index }) {
       );
     }
     return <span className="jsonl-keys">{keys.slice(0, 6).join(', ')}{keys.length > 6 ? '…' : ''}</span>;
-  }, [line]);
+  }, [row.line, parsed, err]);
 
   return (
     <div className={'jsonl-row' + (err ? ' jsonl-err' : '')} data-open={open}>
       <button className="jsonl-gutter" onClick={() => setOpen((o) => !o)} aria-label={open ? 'Collapse' : 'Expand'}>
-        <span className="jsonl-num">{index + 1}</span>
+        <span className="jsonl-num">{row.index + 1}</span>
         <span className="jsonl-twirl">{open ? '▾' : '▸'}</span>
       </button>
       <div className="jsonl-content">
         {!open && <div className="jsonl-summary">{summary}</div>}
         {open && (
-          err ? <pre className="jsonl-raw">{line}</pre>
+          err ? <pre className="jsonl-raw">{row.line}</pre>
               : <div className="jsonl-detail"><JsonValue value={parsed} depth={0} /></div>
         )}
       </div>
@@ -353,19 +432,82 @@ function JsonlRow({ line, index }) {
   );
 }
 
-function renderJsonl(text) {
-  const lines = text.split('\n').filter((l) => l.trim().length > 0);
-  if (lines.length === 0) {
+function JsonlConversationMessage({ record }) {
+  const [expanded, setExpanded] = useState(false);
+  const msg = useMemo(() => getJsonlMessage(record), [record]);
+  const needsExpand = msg.text.length > JSONL_MESSAGE_PREVIEW_LIMIT;
+  const body = expanded || !needsExpand
+    ? msg.text
+    : msg.text.slice(0, JSONL_MESSAGE_PREVIEW_LIMIT).trimEnd() + '…';
+
+  return (
+    <article className="jsonl-msg" data-kind={msg.kind}>
+      <div className="jsonl-msg-head">
+        <span className="jsonl-msg-role">{msg.label}</span>
+        {msg.roleId && <span className="jsonl-msg-role-id">{msg.roleId}</span>}
+        {msg.toolName && <span className="jsonl-msg-tool">{msg.toolName}</span>}
+        <span className="jsonl-msg-line">#{msg.lineNo}</span>
+      </div>
+      <pre className="jsonl-msg-text">{body || 'Empty message'}</pre>
+      <div className="jsonl-msg-foot">
+        {msg.time && <time dateTime={msg.time}>{formatJsonlTime(msg.time)}</time>}
+        {msg.id && <span className="jsonl-msg-id">{msg.id}</span>}
+        {needsExpand && (
+          <button className="jsonl-msg-expand" type="button" onClick={() => setExpanded((o) => !o)}>
+            {expanded ? 'Collapse' : 'Expand'}
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function JsonlConversationView({ records }) {
+  return (
+    <div className="jsonl-chat-root">
+      {records.map((record) => (
+        <JsonlConversationMessage key={record.index} record={record} />
+      ))}
+    </div>
+  );
+}
+
+function JsonlRawView({ records }) {
+  return (
+    <>
+      {records.map((record) => <JsonlRow key={record.index} record={record} />)}
+    </>
+  );
+}
+
+function JsonlRenderer({ text }) {
+  const [dialogMode, setDialogMode] = useState(true);
+  const records = useMemo(() => parseJsonlRecords(text), [text]);
+  if (records.length === 0) {
     return <div className="jsonl-empty">Empty JSONL.</div>;
   }
   return (
-    <div className="jsonl-root">
+    <div className="jsonl-root" data-mode={dialogMode ? 'dialog' : 'raw'}>
       <div className="jsonl-meta">
-        <span className="jsonl-count">{lines.length} record{lines.length === 1 ? '' : 's'}</span>
+        <span className="jsonl-count">{records.length} record{records.length === 1 ? '' : 's'}</span>
+        <label className="jsonl-mode-switch" title="Toggle dialog JSONL view">
+          <span className="jsonl-mode-label">{dialogMode ? 'Dialog' : 'JSONL'}</span>
+          <input
+            type="checkbox"
+            checked={dialogMode}
+            onChange={(e) => setDialogMode(e.target.checked)}
+            aria-label="Dialog JSONL view"
+          />
+          <span className="jsonl-switch-track" aria-hidden="true"></span>
+        </label>
       </div>
-      {lines.map((ln, i) => <JsonlRow key={i} line={ln} index={i} />)}
+      {dialogMode ? <JsonlConversationView records={records} /> : <JsonlRawView records={records} />}
     </div>
   );
+}
+
+function renderJsonl(text) {
+  return <JsonlRenderer text={text || ''} />;
 }
 
 // ---------- Plain code (fallback line-numbered, lightly colorized) ----------
