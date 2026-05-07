@@ -177,22 +177,19 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
     }
   };
 
+  const selectedPath = selection.file || selection.dir || '/';
+  const selectedParent = selectedPath !== '/' ? window.FS.Path.dirname(selectedPath) : null;
   const activeColIdx = trail.length - 1;
   const activeColPath = trail[activeColIdx];
   const activeEntries = cols[activeColPath] || [];
-  const focusPath = typeof selection.focus === 'string' && selection.focus.startsWith('/') ? selection.focus : null;
-  const selectedChildPath = selection.file || trail[activeColIdx + 1] || focusPath || null;
-  const activeIdx = Math.max(0, activeEntries.findIndex((e) => e.path === selectedChildPath));
-  const highlightedPath = selectedChildPath || (activeEntries[0] && activeEntries[0].path) || null;
-  const highlightedEntry = activeEntries.find((e) => e.path === highlightedPath) || null;
-  const highlightedDirectory = highlightedEntry?.type === 'directory'
-    ? highlightedEntry.path
-    : (selection.dir || activeColPath || '/');
-  const previewPath = selection.file || focusPath || highlightedPath || selection.dir;
+  const selectedChildPath = selectedParent === activeColPath ? selectedPath : null;
+  const activeIdx = selectedChildPath ? activeEntries.findIndex((e) => e.path === selectedChildPath) : -1;
+  const searchScope = selectedPath;
+  const previewPath = selectedPath;
 
   useE(() => {
-    if (onSearchScopeChange) onSearchScopeChange(highlightedDirectory || '/');
-  }, [highlightedDirectory, onSearchScopeChange]);
+    if (onSearchScopeChange) onSearchScopeChange(searchScope || '/');
+  }, [searchScope, onSearchScopeChange]);
 
   useE(() => {
     const onKey = (e) => {
@@ -205,16 +202,18 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
         if (!activeEntries.length) return;
         e.preventDefault();
         const dir = e.key === 'ArrowDown' ? 1 : -1;
-        const next = Math.max(0, Math.min(activeEntries.length - 1, activeIdx + dir));
+        const next = activeIdx < 0
+          ? (e.key === 'ArrowDown' ? 0 : activeEntries.length - 1)
+          : Math.max(0, Math.min(activeEntries.length - 1, activeIdx + dir));
         const entry = activeEntries[next];
         const newTrail = trail.slice(0, activeColIdx + 1);
         if (entry.type === 'directory') {
-          setSelection({ ...selection, trail: newTrail, file: null, dir: entry.path, focus: entry.path });
+          setSelection({ ...selection, trail: newTrail, file: null, dir: entry.path, focus: null });
         } else {
-          setSelection({ ...selection, trail: newTrail, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: entry.path });
+          setSelection({ ...selection, trail: newTrail, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: null });
         }
       } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
-        const entry = activeEntries[activeIdx];
+        const entry = activeIdx >= 0 ? activeEntries[activeIdx] : null;
         if (!entry) return;
         e.preventDefault();
         if (entry.type === 'directory') {
@@ -223,28 +222,32 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
           prepareTrailAnimation(next);
           setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
         } else {
-          const next = trail.slice(0, activeColIdx + 1);
-          prepareTrailAnimation(next);
-          setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: entry.path });
+          setSelection({ ...selection, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: null });
         }
       } else if (e.key === 'ArrowLeft') {
-        if (trail.length <= 1) return;
+        if (trail.length <= 1) {
+          if (selectedPath === '/') return;
+          e.preventDefault();
+          prepareTrailAnimation(['/']);
+          setSelection({ ...selection, trail: ['/'], dir: '/', file: null, focus: null });
+          return;
+        }
         e.preventDefault();
         const leaving = trail[trail.length - 1];
         const newTrail = trail.slice(0, -1);
-        const parent = newTrail[newTrail.length - 1];
         prepareTrailAnimation(newTrail);
-        setSelection({ ...selection, trail: newTrail, dir: parent, file: null, focus: leaving });
+        setSelection({ ...selection, trail: newTrail, dir: leaving, file: null, focus: null });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeEntries, activeIdx, trail.join('|'), selection.file, selection.focus]);
+  }, [activeEntries, activeIdx, selectedPath, trail.join('|'), selection.file, selection.dir]);
 
   useE(() => {
-    const el = wrapRef.current?.querySelector('.col:last-child .fs-row[data-selected="true"]');
+    const selectedRows = wrapRef.current?.querySelectorAll('.col .fs-row[data-selected="true"]');
+    const el = selectedRows?.[selectedRows.length - 1];
     if (el) el.scrollIntoView({ block: 'nearest' });
-  }, [selection.file, selection.focus, trail.length]);
+  }, [selectedPath, trail.length]);
 
   const onColumnsWheel = (e) => {
     const el = scrollRef.current;
@@ -271,8 +274,7 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
         <div className="columns-inner" ref={innerRef}>
         {trail.map((path, i) => {
           const entries = cols[path] || [];
-          const isLast = i === trail.length - 1;
-          const selectedChild = trail[i + 1] || (isLast ? (selection.file || focusPath || (entries[0] && entries[0].path)) : null);
+          const selectedChild = trail[i + 1] || (selectedParent === path ? selectedPath : null);
           return (
             <div className="col" key={path + ':' + i} style={{zIndex: trail.length - i}}>
               <div className="col-head">

@@ -127,40 +127,39 @@ function useFsList(fs, path, opts) {
 
 function useFsRead(fs, path) {
   // Loads stat first, then available preview levels. Each level is optional.
+  const emptyBundle = () => ({ l0: null, l1: null, l2: null });
   const [stat, setStat] = useState(null);
-  const [bundle, setBundle] = useState({ l0: null, l1: null, l2: null });
+  const [bundle, setBundle] = useState(emptyBundle);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   useEffect(() => {
-    if (!path) { setStat(null); setBundle({ l0: null, l1: null, l2: null }); return; }
+    if (!path) { setStat(null); setBundle(emptyBundle()); return; }
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setStat(null);
+    setBundle(emptyBundle());
     (async () => {
       try {
         const s = await fs.stat(path);
-        if (cancelled) return;
-        setStat(s);
-        const levels = s?.type === 'directory' ? ['l0', 'l1'] : ['l0', 'l1', 'l2'];
-        const results = await Promise.all(
-          levels.map((lv) =>
-            fs.read(path, { level: lv, isDirectory: s?.type === 'directory' })
-              .then((r) => [lv, r?.content ?? null])
-              .catch(() => [lv, null])
-          )
-        );
-        if (cancelled) return;
-        const out = { l0: null, l1: null, l2: null };
-        for (const [lv, c] of results) {
-          if (typeof c !== 'string') { out[lv] = null; continue; }
+        const levels = s?.type === 'directory' ? ['l0', 'l1'] : ['l2'];
+        const out = emptyBundle();
+        for (let i = 0; i < levels.length; i++) {
+          const lv = levels[i];
+          let c = null;
+          try {
+            const r = await fs.read(path, { level: lv, isDirectory: s?.type === 'directory' });
+            c = r?.content ?? null;
+          } catch {}
+          if (typeof c !== 'string') continue;
           const t = c.trim();
           // OpenViking returns placeholder strings when overviews aren't generated yet.
-          if (!t || /\[directory (overview|abstract) is not (generated|ready)\]/i.test(t)) {
-            out[lv] = null;
-          } else {
+          if (t && !/^\[directory (overview|abstract) is not (generated|ready)\]$/i.test(t)) {
             out[lv] = c;
           }
         }
+        if (cancelled) return;
+        setStat(s);
         setBundle(out);
       } catch (e) {
         if (!cancelled) setError(e);

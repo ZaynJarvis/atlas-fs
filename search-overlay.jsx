@@ -127,7 +127,7 @@ function SearchOverlay({ fs, scope: initialScope, onPick, onClose, initialMode =
 
   const selectResult = (r) => {
     let path = null, line = null;
-    if (mode === 'find') path = r.path;
+    if (mode === 'find') { path = r.path; line = r.line; }
     else if (mode === 'grep') { path = r.uri; line = r.line; }
     else if (mode === 'glob') path = typeof r === 'string' ? r : (r.path || r.uri || '');
     if (path) { onPick(path, line); onClose(); }

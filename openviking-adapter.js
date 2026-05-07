@@ -283,6 +283,30 @@
     async find(query, opts = {}) {
       const { limit = 50, root = '/' } = opts;
       if (!query) return [];
+      const localFindFile = async (path) => {
+        const r = await this.read(path);
+        const q = query.toLowerCase();
+        const out = [];
+        const lines = (r.content || '').split('\n');
+        for (let i = 0; i < lines.length && out.length < limit; i++) {
+          const line = lines[i];
+          if (!line.toLowerCase().includes(q)) continue;
+          out.push({
+            path,
+            name: Path.basename(path),
+            type: 'file',
+            score: 1,
+            snippet: line.trim().slice(0, 240),
+            line: i + 1,
+          });
+        }
+        return out;
+      };
+      const stat = await this.stat(root).catch(() => null);
+      if (stat?.type === 'file') {
+        const local = await localFindFile(root).catch(() => []);
+        if (local.length) return local;
+      }
       const body = { query, limit };
       if (root && root !== '/') body.target_uri = pathToUri(root);
       try {
@@ -294,7 +318,7 @@
         const data = await res.json();
         const r = data.result || {};
         const all = [...(r.resources || []), ...(r.memories || [])];
-        return all.map((h) => ({
+        const out = all.map((h) => ({
           path: h.uri ? uriToPath(h.uri) : (h.path || ''),
           name: h.name || Path.basename(h.uri ? uriToPath(h.uri) : (h.path || '')),
           type: isDirectoryEntry(h) ? 'directory' : 'file',
@@ -302,14 +326,36 @@
           snippet: h.abstract || h.snippet || null,
           line: null,
         }));
+        if (!out.length && root !== '/' && Path.extname(root)) {
+          const local = await localFindFile(root).catch(() => []);
+          if (local.length) return local;
+        }
+        return out;
       } catch {
         return [];
       }
     }
 
     async grep(pattern, opts = {}) {
-      const { limit = 200, root = '/' } = opts;
+      const { limit = 200, root = '/', ignoreCase = false } = opts;
       if (!pattern) return [];
+      const localGrepFile = async (path) => {
+        let re;
+        try { re = new RegExp(pattern, ignoreCase ? 'i' : ''); }
+        catch (e) { throw new FsError('EINVAL', 'Bad regex: ' + e.message, path); }
+        const r = await this.read(path);
+        const lines = (r.content || '').split('\n');
+        const out = [];
+        for (let i = 0; i < lines.length && out.length < limit; i++) {
+          re.lastIndex = 0;
+          if (re.test(lines[i])) out.push({ uri: path, line: i + 1, content: lines[i] });
+        }
+        return out;
+      };
+
+      const stat = await this.stat(root).catch(() => null);
+      if (stat?.type === 'file') return localGrepFile(root);
+
       const uri = pathToUri(root === '/' ? '/' : root);
       const body = { uri, pattern, limit };
       try {
@@ -319,14 +365,20 @@
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        const matches = (data.result && data.result.matches) || [];
-        return matches.map((m) => ({
+        const result = data.result || {};
+        const matches = result.matches || [];
+        const out = matches.map((m) => ({
           uri: uriToPath(m.uri),
           line: m.line,
           content: m.content,
         }));
-      } catch {
-        return [];
+        if (!out.length && root !== '/' && result.files_scanned === 0) {
+          const local = await localGrepFile(root).catch(() => null);
+          if (local) return local;
+        }
+        return out;
+      } catch (e) {
+        throw e;
       }
     }
 
