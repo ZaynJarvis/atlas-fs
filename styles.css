@@ -73,6 +73,7 @@
   --main-min-w: 360px;
   --preview-col-w: clamp(320px, min(var(--preview-w), calc(100vw - var(--main-min-w))), var(--preview-w));
   --columns-browser-h: 56%;
+  --tree-browser-h: 46%;
 }
 
 [data-theme="dark"] {
@@ -107,6 +108,8 @@
 html, body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
@@ -124,9 +127,10 @@ input { font: inherit; color: inherit; }
 .app {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  height: 100vh;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   background: var(--bg);
+  overflow: hidden;
 }
 
 .topbar {

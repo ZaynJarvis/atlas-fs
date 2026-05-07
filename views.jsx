@@ -344,6 +344,66 @@ function ColumnsSplitResizer() {
   );
 }
 
+function TreeSplitResizer() {
+  const [drag, setDrag] = useS(false);
+
+  useE(() => {
+    try {
+      const saved = localStorage.getItem('atlas-tree-browser-h');
+      if (saved) document.documentElement.style.setProperty('--tree-browser-h', saved);
+    } catch {}
+  }, []);
+
+  useE(() => {
+    if (!drag) return;
+    document.body.setAttribute('data-resizing-y', 'true');
+    const onMove = (e) => {
+      if (e.cancelable) e.preventDefault();
+      const view = document.querySelector('.view-tree');
+      if (!view) return;
+      const rect = view.getBoundingClientRect();
+      const y = (e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY) - rect.top;
+      const ratio = Math.max(0.34, Math.min(0.72, y / Math.max(1, rect.height)));
+      const value = `${Math.round(ratio * 100)}%`;
+      document.documentElement.style.setProperty('--tree-browser-h', value);
+      try { localStorage.setItem('atlas-tree-browser-h', value); } catch {}
+    };
+    const onUp = () => setDrag(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
+    return () => {
+      document.body.removeAttribute('data-resizing-y');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('touchcancel', onUp);
+    };
+  }, [drag]);
+
+  const startMouseDrag = (e) => {
+    e.preventDefault();
+    setDrag(true);
+  };
+
+  const startTouchDrag = () => {
+    setDrag(true);
+  };
+
+  return (
+    <div
+      className="tree-split-handle"
+      data-dragging={drag}
+      onMouseDown={startMouseDrag}
+      onTouchStart={startTouchDrag}
+      title="Drag to resize tree and reader"
+    />
+  );
+}
+
 // ============================================================
 // 2. TREE + DETAIL
 // ============================================================
@@ -484,6 +544,7 @@ function TreeView({ fs, selection, setSelection }) {
         </div>
       </div>
       <TreeResizer />
+      <TreeSplitResizer />
       <Preview fs={fs} path={selection.file || selection.dir} />
     </div>
   );
