@@ -180,8 +180,11 @@ function ColumnsView({ fs, selection, setSelection }) {
   const activeColIdx = trail.length - 1;
   const activeColPath = trail[activeColIdx];
   const activeEntries = cols[activeColPath] || [];
-  const selectedChildPath = selection.file || trail[activeColIdx + 1] || selection.focus || null;
+  const focusPath = typeof selection.focus === 'string' && selection.focus.startsWith('/') ? selection.focus : null;
+  const selectedChildPath = selection.file || trail[activeColIdx + 1] || focusPath || null;
   const activeIdx = Math.max(0, activeEntries.findIndex((e) => e.path === selectedChildPath));
+  const highlightedPath = selectedChildPath || (activeEntries[0] && activeEntries[0].path) || null;
+  const previewPath = selection.file || focusPath || highlightedPath || selection.dir;
 
   useE(() => {
     const onKey = (e) => {
@@ -211,6 +214,10 @@ function ColumnsView({ fs, selection, setSelection }) {
           next.push(entry.path);
           prepareTrailAnimation(next);
           setSelection({ ...selection, trail: next, file: null, dir: entry.path, focus: null });
+        } else {
+          const next = trail.slice(0, activeColIdx + 1);
+          prepareTrailAnimation(next);
+          setSelection({ ...selection, trail: next, file: entry.path, dir: window.FS.Path.dirname(entry.path), focus: entry.path });
         }
       } else if (e.key === 'ArrowLeft') {
         if (trail.length <= 1) return;
@@ -238,7 +245,7 @@ function ColumnsView({ fs, selection, setSelection }) {
         {trail.map((path, i) => {
           const entries = cols[path] || [];
           const isLast = i === trail.length - 1;
-          const selectedChild = trail[i + 1] || (isLast ? (selection.file || selection.focus || (entries[0] && entries[0].path)) : null);
+          const selectedChild = trail[i + 1] || (isLast ? (selection.file || focusPath || (entries[0] && entries[0].path)) : null);
           return (
             <div className="col" key={path + ':' + i} style={{zIndex: trail.length - i}}>
               <div className="col-head">
@@ -279,7 +286,7 @@ function ColumnsView({ fs, selection, setSelection }) {
       </div>
       <ColumnsSplitResizer />
       <PreviewResizer />
-      <Preview fs={fs} path={selection.file || selection.dir} />
+      <Preview fs={fs} path={previewPath} />
     </div>
   );
 }

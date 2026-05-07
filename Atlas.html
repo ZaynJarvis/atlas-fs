@@ -285,6 +285,17 @@ function App() {
         <View fs={fs} selection={selection} setSelection={setSelection} />
       </div>
 
+      <footer className="statusbar control-footer" aria-label="Keyboard controls">
+        <span className="key"><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span className="key"><kbd>→</kbd><kbd>↵</kbd> Open</span>
+        <span className="key"><kbd>←</kbd> Back</span>
+        <span className="key"><kbd>⌘F</kbd> Search</span>
+        <span className="key"><kbd>⌘1</kbd><kbd>⌘2</kbd> View</span>
+        <span className="spacer"></span>
+        <span>{cur.label}</span>
+        <span>{selection.file || selection.dir || '/'}</span>
+      </footer>
+
       {searchOpen && (
         <window.SearchOverlay
           fs={fs}
