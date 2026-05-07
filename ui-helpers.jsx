@@ -121,7 +121,7 @@ function useFsList(fs, path, opts) {
     setError(null);
     fs.list(path, opts).then((e) => { if (!cancelled) setEntries(e); }).catch((e) => { if (!cancelled) setError(e); });
     return () => { cancelled = true; };
-  }, [key]);
+  }, [fs, key]);
   return { entries, error };
 }
 
@@ -173,7 +173,7 @@ function useFsRead(fs, path) {
       }
     })();
     return () => { cancelled = true; };
-  }, [path]);
+  }, [fs, path]);
   return { stat, bundle, loading, error };
 }
 

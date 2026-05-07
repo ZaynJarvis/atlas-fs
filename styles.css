@@ -650,7 +650,7 @@ body[data-resizing-y="true"] * {
     display: none;
   }
   .statusbar {
-    padding-inline: var(--s-3);
+    display: none;
   }
 }
 
@@ -664,9 +664,6 @@ body[data-resizing-y="true"] * {
   .gear-btn {
     width: 30px;
     height: 30px;
-  }
-  .statusbar .key {
-    margin-right: 6px;
   }
   .preview-head {
     padding: 7px var(--s-3);

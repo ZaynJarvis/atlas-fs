@@ -43,7 +43,7 @@ function ColumnsView({ fs, selection, setSelection }) {
         setRawCols(next);
       });
     return () => { alive = false; };
-  }, [trail.join('|')]);
+  }, [fs, trail.join('|')]);
 
   const cols = useM(() => {
     const sorted = {};
@@ -351,12 +351,20 @@ function TreeView({ fs, selection, setSelection }) {
   const [expanded, setExpanded] = useS(() => new Set(['/', '/src']));
   const [childCache, setChildCache] = useS({});
   const treeWrapRef = useR();
+  const prevFsRef = useR(fs);
   useE(() => {
-    const need = [...expanded].filter((p) => !childCache[p]);
+    const fsChanged = prevFsRef.current !== fs;
+    prevFsRef.current = fs;
+    const paths = [...expanded];
+    const need = fsChanged ? paths : paths.filter((p) => !childCache[p]);
     if (!need.length) return;
     Promise.all(need.map((p) => fs.list(p).then((c) => [p, c]).catch(() => [p, []])))
-      .then((pairs) => setChildCache((prev) => { const next = { ...prev }; for (const [p, c] of pairs) next[p] = c; return next; }));
-  }, [[...expanded].join('|')]);
+      .then((pairs) => setChildCache((prev) => {
+        const next = fsChanged ? {} : { ...prev };
+        for (const [p, c] of pairs) next[p] = c;
+        return next;
+      }));
+  }, [fs, [...expanded].join('|')]);
 
   const toggle = (p) => setExpanded((prev) => { const next = new Set(prev); if (next.has(p)) next.delete(p); else next.add(p); return next; });
 
