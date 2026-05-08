@@ -142,6 +142,22 @@
       const data = await res.json();
       const raw = data.result || data.entries || data || [];
       const entries = (Array.isArray(raw) ? raw : []).map((e) => this._normalize(e, path));
+      // ls API may return time-only modTime (HH:MM:SS) without a date.
+      // Backfill full timestamps from stat API in parallel.
+      const needsStat = entries.filter((e) => e._mtimePartial);
+      if (needsStat.length) {
+        const results = await Promise.allSettled(
+          needsStat.map((e) => this._statDirect(e.path))
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value) {
+            const e = needsStat[i];
+            e.mtime = r.value.mtime || e.mtime;
+            e.ctime = r.value.ctime || e.ctime;
+            delete e._mtimePartial;
+          }
+        });
+      }
       this._listCache.set(path, { entries, expires: Date.now() + 5000 });
       for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 5000 });
       return this._applyOpts(entries, opts);
@@ -174,13 +190,16 @@
       const det = detectMime(name);
       const rawMtime = entry.mtime || entry.modTime;
       let mtime = 0;
+      let mtimePartial = false;
       if (rawMtime) {
         if (typeof rawMtime === 'number') mtime = rawMtime;
         else {
           const s = rawMtime.trim();
           if (/^\d{1,2}:\d{2}/.test(s)) {
-            const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-            mtime = Date.parse(today + 'T' + s + '+08:00') || 0;
+            // Time-only (UTC) — use as interim value, flag for stat backfill.
+            const today = new Date().toISOString().slice(0, 10);
+            mtime = Date.parse(today + 'T' + s + 'Z') || 0;
+            mtimePartial = true;
           } else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
             mtime = Date.parse(s + 'T00:00:00+08:00') || 0;
           } else {
@@ -189,7 +208,7 @@
           }
         }
       }
-      return {
+      const out = {
         path,
         name,
         type: isDir ? 'directory' : 'file',
@@ -199,6 +218,32 @@
         mode: entry.mode ?? (isDir ? 0o555 : 0o444),  // read-only bits
         mime: entry.mime || det.mime,
         language: entry.language || det.language,
+        hidden: name.startsWith('.') || name.startsWith('_'),
+      };
+      if (mtimePartial) out._mtimePartial = true;
+      return out;
+    }
+
+    async _statDirect(path) {
+      const uri = pathToUri(path);
+      const res = await this._req(`/api/v1/fs/stat?uri=${encodeURIComponent(uri)}`);
+      const data = await res.json();
+      const r = data.result || data;
+      if (!r || !r.modTime) return null;
+      const name = r.name || Path.basename(path);
+      const isDir = !!r.isDir;
+      const det = detectMime(name);
+      const mtime = Date.parse(r.modTime) || 0;
+      return {
+        path,
+        name,
+        type: isDir ? 'directory' : 'file',
+        size: r.size ?? 0,
+        mtime,
+        ctime: mtime,
+        mode: r.mode ?? (isDir ? 0o555 : 0o444),
+        mime: det.mime,
+        language: det.language,
         hidden: name.startsWith('.') || name.startsWith('_'),
       };
     }
@@ -212,8 +257,14 @@
         return root;
       }
 
-      // Avoid probing /api/v1/fs/stat because some OpenViking deployments return
-      // 400 for valid paths. Parent listings already contain enough metadata.
+      // Try stat API first for full timestamp, fall back to parent listing.
+      try {
+        const direct = await this._statDirect(path);
+        if (direct) {
+          this._statCache.set(path, { value: direct, expires: Date.now() + 5000 });
+          return direct;
+        }
+      } catch {}
       const parent = Path.dirname(path);
       const entries = await this.list(parent).catch(() => []);
       const hit = entries.find((x) => x.path === path);
