@@ -352,6 +352,13 @@
   line-height: 1.55;
   color: var(--ink-2);
 }
+.jsonl-msg-md {
+  white-space: normal;
+}
+.jsonl-msg-md .md-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .jsonl-msg-foot {
   margin-top: 7px;
   padding-top: 6px;
