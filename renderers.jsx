@@ -448,7 +448,11 @@ function JsonlConversationMessage({ record }) {
         {msg.toolName && <span className="jsonl-msg-tool">{msg.toolName}</span>}
         <span className="jsonl-msg-line">#{msg.lineNo}</span>
       </div>
-      <pre className="jsonl-msg-text">{body || 'Empty message'}</pre>
+      {msg.kind === 'assistant' && !msg.toolName ? (
+        <div className="jsonl-msg-text jsonl-msg-md">{renderMarkdown(body) || 'Empty message'}</div>
+      ) : (
+        <pre className="jsonl-msg-text">{body || 'Empty message'}</pre>
+      )}
       <div className="jsonl-msg-foot">
         {msg.time && <time dateTime={msg.time}>{formatJsonlTime(msg.time)}</time>}
         {msg.id && <span className="jsonl-msg-id">{msg.id}</span>}
