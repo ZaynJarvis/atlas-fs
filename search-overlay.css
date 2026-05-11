@@ -315,3 +315,36 @@
 
 /* Active-row scroll-into-view ring */
 .search-row[data-active="true"] .search-row-name { color: var(--accent); }
+
+/* Phone (≤ 720px) — keep the overlay usable on a 360-393px viewport.
+   The desktop layout stacks each mode button as label + uppercase desc and
+   keeps a tab-hint, an input row with two markers, a meta row, and a kbd
+   footer. On a narrow viewport that pushes Glob (and the input itself) off
+   the right edge, so collapse everything that's keyboard-centric or only
+   redundant with the active mode marker. */
+@media (max-width: 720px) {
+  .search-overlay { padding-top: 6vh; }
+  .search-panel { width: 96vw; max-height: 86vh; }
+
+  .search-modes { padding: 4px 4px 0; }
+  .search-mode-btn { padding: 8px 12px; flex: 1 1 0; align-items: center; }
+  .search-mode-desc { display: none; }
+  .search-tab-hint { display: none; }
+
+  .search-input-wrap { gap: 6px; padding: 10px 12px; }
+  /* The input already shows a placeholder per mode; the mode chip is
+     redundant on a narrow row. Keep the scope marker — it's the only
+     surface for current scope on touch. */
+  .search-mode-marker { display: none; }
+  .search-scope-marker { padding: 3px 6px; font-size: 10.5px; }
+  .search-input { font-size: 15px; }
+  .search-status { min-width: 0; }
+
+  .search-meta { padding: 6px 12px; }
+  .search-row { padding: 8px 12px; }
+  .search-row-dir { font-size: 10.5px; }
+
+  /* The footer is all keyboard hints (↑↓ scope / ↵ open / tab mode /
+     esc close). None of those map to a touch viewport — drop the row. */
+  .search-foot { display: none; }
+}

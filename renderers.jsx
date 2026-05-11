@@ -48,8 +48,12 @@ function mdInline(s, keyPrefix = '') {
     // italic *…* or _…_
     if (ch === '*' || ch === '_') {
       const close = s.indexOf(ch, i + 1);
-      // Avoid pairing across whitespace-only or word chars on outside
       if (close > i + 1 && s[i + 1] !== ' ' && s[close - 1] !== ' ') {
+        // _ must not be used for intra-word emphasis (CommonMark rule)
+        const isWord = (c) => c && /\w/.test(c);
+        if (ch === '_' && (isWord(s[i - 1]) || isWord(s[close + 1]))) {
+          buf += ch; i++; continue;
+        }
         push(<em>{mdInline(s.slice(i + 1, close), keyPrefix + 'i' + i + '_')}</em>);
         i = close + 1; continue;
       }
