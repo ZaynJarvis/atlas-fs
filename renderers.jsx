@@ -436,10 +436,62 @@ function JsonlRow({ record, line, index }) {
   );
 }
 
+function parseToolCallBody(text, toolName) {
+  if (!toolName) return null;
+  const afterTag = text.replace(/^\[tool:\s*[^\]]+\]\s*/, '');
+  if (!afterTag.trim()) return null;
+  try { return JSON.parse(afterTag); } catch { return null; }
+}
+
+function parseToolResultBody(text) {
+  const afterTag = text.replace(/^\[tool result\]\s*/, '');
+  if (!afterTag.trim()) return null;
+  try { return JSON.parse(afterTag); } catch { return null; }
+}
+
+function JsonlToolCallContent({ text, toolName }) {
+  const parsed = useMemo(() => parseToolCallBody(text, toolName), [text, toolName]);
+  if (parsed) {
+    return (
+      <div className="jsonl-tool-body">
+        <div className="jsonl-tool-args"><JsonValue value={parsed} depth={0} defaultOpen={false} /></div>
+      </div>
+    );
+  }
+  const afterTag = text.replace(/^\[tool:\s*[^\]]+\]\s*/, '');
+  return <pre className="jsonl-msg-text">{afterTag || 'No arguments'}</pre>;
+}
+
+function JsonlToolResultContent({ text }) {
+  const afterTag = text.replace(/^\[tool result\]\s*/, '');
+  const parsed = useMemo(() => parseToolResultBody(text), [text]);
+  if (parsed) {
+    return (
+      <div className="jsonl-tool-body">
+        <div className="jsonl-tool-args"><JsonValue value={parsed} depth={0} defaultOpen={false} /></div>
+      </div>
+    );
+  }
+  const needsExpand = afterTag.length > JSONL_MESSAGE_PREVIEW_LIMIT;
+  const [expanded, setExpanded] = useState(false);
+  const body = expanded || !needsExpand ? afterTag : afterTag.slice(0, JSONL_MESSAGE_PREVIEW_LIMIT).trimEnd() + '…';
+  return (
+    <>
+      <pre className="jsonl-msg-text">{body || 'Empty result'}</pre>
+      {needsExpand && (
+        <button className="jsonl-msg-expand jsonl-tool-expand" type="button" onClick={() => setExpanded((o) => !o)}>
+          {expanded ? 'Collapse' : 'Expand'}
+        </button>
+      )}
+    </>
+  );
+}
+
 function JsonlConversationMessage({ record }) {
   const [expanded, setExpanded] = useState(false);
   const msg = useMemo(() => getJsonlMessage(record), [record]);
-  const needsExpand = msg.text.length > JSONL_MESSAGE_PREVIEW_LIMIT;
+  const isTool = !!(msg.toolName || msg.kind === 'tool-result');
+  const needsExpand = !isTool && msg.text.length > JSONL_MESSAGE_PREVIEW_LIMIT;
   const body = expanded || !needsExpand
     ? msg.text
     : msg.text.slice(0, JSONL_MESSAGE_PREVIEW_LIMIT).trimEnd() + '…';
@@ -452,7 +504,11 @@ function JsonlConversationMessage({ record }) {
         {msg.toolName && <span className="jsonl-msg-tool">{msg.toolName}</span>}
         <span className="jsonl-msg-line">#{msg.lineNo}</span>
       </div>
-      {msg.kind === 'assistant' && !msg.toolName ? (
+      {msg.toolName ? (
+        <JsonlToolCallContent text={msg.text} toolName={msg.toolName} />
+      ) : msg.kind === 'tool-result' ? (
+        <JsonlToolResultContent text={msg.text} />
+      ) : msg.kind === 'assistant' ? (
         <div className="jsonl-msg-text jsonl-msg-md">{renderMarkdown(body) || 'Empty message'}</div>
       ) : (
         <pre className="jsonl-msg-text">{body || 'Empty message'}</pre>
@@ -470,10 +526,18 @@ function JsonlConversationMessage({ record }) {
   );
 }
 
-function JsonlConversationView({ records }) {
+function JsonlConversationView({ records, showTools }) {
+  const filtered = useMemo(() => {
+    if (showTools) return records;
+    return records.filter((r) => {
+      const msg = getJsonlMessage(r);
+      return !msg.toolName && msg.kind !== 'tool-result';
+    });
+  }, [records, showTools]);
+
   return (
     <div className="jsonl-chat-root">
-      {records.map((record) => (
+      {filtered.map((record) => (
         <JsonlConversationMessage key={record.index} record={record} />
       ))}
     </div>
@@ -490,57 +554,46 @@ function JsonlRawView({ records }) {
 
 function JsonlRenderer({ text }) {
   const [dialogMode, setDialogMode] = useState(true);
-  const [hideTools, setHideTools] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const records = useMemo(() => parseJsonlRecords(text), [text]);
-  const toolCount = useMemo(
-    () => records.reduce((n, r) => {
-      const m = getJsonlMessage(r);
-      return n + (m.kind === 'tool-result' || m.toolName ? 1 : 0);
-    }, 0),
-    [records],
-  );
-  const visibleRecords = useMemo(() => {
-    if (!hideTools) return records;
-    return records.filter((r) => {
-      const m = getJsonlMessage(r);
-      return !(m.kind === 'tool-result' || m.toolName);
-    });
-  }, [records, hideTools]);
+  const hasTools = useMemo(() => records.some((r) => {
+    const msg = getJsonlMessage(r);
+    return !!msg.toolName || msg.kind === 'tool-result';
+  }), [records]);
+
   if (records.length === 0) {
     return <div className="jsonl-empty">Empty JSONL.</div>;
   }
   return (
     <div className="jsonl-root" data-mode={dialogMode ? 'dialog' : 'raw'}>
       <div className="jsonl-meta">
-        <span className="jsonl-count">
-          {visibleRecords.length}
-          {hideTools && toolCount > 0 ? ` / ${records.length}` : ''}
-          {' '}record{records.length === 1 ? '' : 's'}
-        </span>
-        {toolCount > 0 && (
-          <label className="jsonl-mode-switch" title={hideTools ? 'Show tool calls' : 'Hide tool calls'}>
-            <span className="jsonl-mode-label">{hideTools ? 'Tools hidden' : 'Tools shown'}</span>
+        <span className="jsonl-count">{records.length} record{records.length === 1 ? '' : 's'}</span>
+        <div className="jsonl-meta-controls">
+          {dialogMode && hasTools && (
+            <label className="jsonl-mode-switch" title="Show tool calls and results">
+              <span className="jsonl-mode-label">{showTools ? 'Tools' : 'Tools'}</span>
+              <input
+                type="checkbox"
+                checked={showTools}
+                onChange={(e) => setShowTools(e.target.checked)}
+                aria-label="Show tool calls"
+              />
+              <span className="jsonl-switch-track" aria-hidden="true"></span>
+            </label>
+          )}
+          <label className="jsonl-mode-switch" title="Toggle dialog JSONL view">
+            <span className="jsonl-mode-label">{dialogMode ? 'Dialog' : 'JSONL'}</span>
             <input
               type="checkbox"
-              checked={hideTools}
-              onChange={(e) => setHideTools(e.target.checked)}
-              aria-label="Hide tool calls"
+              checked={dialogMode}
+              onChange={(e) => setDialogMode(e.target.checked)}
+              aria-label="Dialog JSONL view"
             />
             <span className="jsonl-switch-track" aria-hidden="true"></span>
           </label>
-        )}
-        <label className="jsonl-mode-switch" title="Toggle dialog JSONL view">
-          <span className="jsonl-mode-label">{dialogMode ? 'Dialog' : 'JSONL'}</span>
-          <input
-            type="checkbox"
-            checked={dialogMode}
-            onChange={(e) => setDialogMode(e.target.checked)}
-            aria-label="Dialog JSONL view"
-          />
-          <span className="jsonl-switch-track" aria-hidden="true"></span>
-        </label>
+        </div>
       </div>
-      {dialogMode ? <JsonlConversationView records={visibleRecords} /> : <JsonlRawView records={visibleRecords} />}
+      {dialogMode ? <JsonlConversationView records={records} showTools={showTools} /> : <JsonlRawView records={records} />}
     </div>
   );
 }

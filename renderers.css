@@ -382,6 +382,29 @@
   color: var(--accent-ink);
 }
 
+/* Tool call/result rendering */
+.jsonl-meta-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.jsonl-tool-body {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.jsonl-tool-args {
+  padding: 4px 0;
+  overflow: auto;
+  max-height: 480px;
+}
+.jsonl-tool-expand {
+  margin-top: 6px;
+}
+.jsonl-msg[data-kind="tool-result"] .jsonl-msg-role {
+  color: var(--muted);
+}
+
 /* ---- Plain code with line numbers ---- */
 .preview-section-body.code {
   padding: 0;
