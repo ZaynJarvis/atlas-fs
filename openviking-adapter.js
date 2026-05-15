@@ -10,6 +10,7 @@
  * Endpoints used (from OpenViking docs, /api/v1/...):
  *   GET  /health                                 — connectivity probe
  *   GET  /api/v1/fs/ls?uri=...&recursive=&simple=
+ *   GET  /api/v1/fs/tree?uri=...&level_limit=... — shallow tree preload
  *   GET  /api/v1/fs/read?uri=...                 — file contents
  *   GET  /api/v1/fs/stat?uri=...                 — metadata (best-effort)
  *   POST /api/v1/search/find                     — semantic search
@@ -22,6 +23,13 @@
   const { FileSystem, FsError, Path, detectMime } = window.FS;
 
   const VIKING_PROTOCOL = 'viking://';
+  const CACHE_TTL_MS = 5000;
+  const STALE_FALLBACK_MS = 5000;
+  const LIST_NODE_LIMIT = 256;
+  const LIST_ABS_LIMIT = 128;
+  const TREE_LEVEL_LIMIT = 3;
+  const TREE_NODE_LIMIT = 256;
+  const TREE_ABS_LIMIT = 128;
 
   // path "/" -> "viking://"
   // path "/resources" -> "viking://resources/"
@@ -37,6 +45,29 @@
     let rest = uri.slice(VIKING_PROTOCOL.length);
     if (rest.endsWith('/')) rest = rest.slice(0, -1);
     return rest ? '/' + rest : '/';
+  }
+
+  function pathToDirectoryUri(path) {
+    const uri = pathToUri(path);
+    return uri === VIKING_PROTOCOL || uri.endsWith('/') ? uri : uri + '/';
+  }
+
+  function makeQuery(params) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v == null) continue;
+      qs.set(k, String(v));
+    }
+    return qs.toString();
+  }
+
+  function isSummaryPlaceholder(text) {
+    const t = String(text || '').trim();
+    return /\[directory (overview|abstract) is not (generated|ready)\]/i.test(t);
+  }
+
+  function usableSummary(text) {
+    return typeof text === 'string' && text.trim() && !isSummaryPlaceholder(text);
   }
 
   function mapStatusToErrCode(status) {
@@ -78,8 +109,18 @@
       this.account = opts.account || '';
       this.user = opts.user || '';
       this.timeoutMs = opts.timeoutMs ?? 15000;
+      this.listNodeLimit = opts.listNodeLimit ?? LIST_NODE_LIMIT;
+      this.treeLevelLimit = opts.treeLevelLimit ?? TREE_LEVEL_LIMIT;
+      this.treeNodeLimit = opts.treeNodeLimit ?? TREE_NODE_LIMIT;
+      this.treeAbsLimit = opts.treeAbsLimit ?? TREE_ABS_LIMIT;
       this._listCache = new Map();
       this._statCache = new Map();
+      this._contentCache = new Map();
+      this._listInflight = new Map();
+      this._statInflight = new Map();
+      this._contentInflight = new Map();
+      this._treeInflight = new Map();
+      this._treeWarmCache = new Map();
       this._dropPersistedListCache();
     }
 
@@ -126,6 +167,139 @@
       return await res.json().catch(() => ({ status: 'ok' }));
     }
 
+    _cacheWindow(ttl = CACHE_TTL_MS) {
+      const now = Date.now();
+      return { fetchedAt: now, expires: now + ttl, staleUntil: now + ttl + STALE_FALLBACK_MS };
+    }
+
+    _rememberStat(entry, ttl = CACHE_TTL_MS) {
+      if (!entry?.path) return;
+      this._statCache.set(entry.path, { value: entry, ...this._cacheWindow(ttl) });
+    }
+
+    _rememberList(path, entries, opts = {}) {
+      path = Path.normalize(path);
+      const existing = this._listCache.get(path);
+      // A truncated tree preload should never replace a fresh direct ls.
+      if (opts.partial && opts.source === 'tree' && existing && existing.source === 'ls' && existing.expires > Date.now()) {
+        return existing.entries;
+      }
+      const record = {
+        entries,
+        source: opts.source || 'ls',
+        partial: !!opts.partial,
+        ...this._cacheWindow(opts.ttl || CACHE_TTL_MS),
+      };
+      this._listCache.set(path, record);
+      for (const e of entries) {
+        this._rememberStat(e);
+        if (e.type === 'directory' && usableSummary(e.abstract)) {
+          this._rememberContent(e.path, 'l0', e.abstract, { source: opts.source || 'ls' });
+        } else if (e.type === 'directory' && typeof e.abstract === 'string' && isSummaryPlaceholder(e.abstract)) {
+          this._rememberContent(e.path, 'l0', '', { source: opts.source || 'ls', negative: true });
+        }
+      }
+      return entries;
+    }
+
+    _contentKey(path, level) {
+      return `${level}:${Path.normalize(path)}`;
+    }
+
+    _rememberContent(path, level, content, opts = {}) {
+      this._contentCache.set(this._contentKey(path, level), {
+        content: content || '',
+        negative: !!opts.negative,
+        source: opts.source || 'read',
+        ...this._cacheWindow(opts.ttl || CACHE_TTL_MS),
+      });
+    }
+
+    _chunkFromContent(content, maxBytes, encoding) {
+      const text = content || '';
+      const truncated = text.length > maxBytes;
+      return { content: truncated ? text.slice(0, maxBytes) : text, encoding, truncated };
+    }
+
+    async prefetchTree(path = '/', opts = {}) {
+      path = Path.normalize(path);
+      const levelLimit = opts.levelLimit ?? this.treeLevelLimit;
+      const nodeLimit = opts.nodeLimit ?? this.treeNodeLimit;
+      const absLimit = opts.absLimit ?? this.treeAbsLimit;
+      const showAllHidden = opts.showAllHidden ?? false;
+      const key = [path, levelLimit, nodeLimit, absLimit, showAllHidden].join('|');
+      const warmed = this._treeWarmCache.get(key);
+      if (!opts.refresh && warmed && warmed.expires > Date.now()) return warmed.value;
+      const existing = this._treeInflight.get(key);
+      if (existing) return existing;
+
+      const promise = this._fetchTree(path, { levelLimit, nodeLimit, absLimit, showAllHidden })
+        .then((entries) => {
+          this._treeWarmCache.set(key, { value: entries, ...this._cacheWindow(CACHE_TTL_MS) });
+          return entries;
+        })
+        .catch((e) => {
+          if (opts.strict) throw e;
+          return null;
+        })
+        .finally(() => this._treeInflight.delete(key));
+      this._treeInflight.set(key, promise);
+      return promise;
+    }
+
+    async _fetchTree(path, opts) {
+      const uri = pathToDirectoryUri(path);
+      const url = '/api/v1/fs/tree?' + makeQuery({
+        uri,
+        output: 'agent',
+        level_limit: opts.levelLimit,
+        node_limit: opts.nodeLimit,
+        abs_limit: opts.absLimit,
+        show_all_hidden: opts.showAllHidden,
+      });
+      const res = await this._req(url, { cache: 'no-store' });
+      const data = await res.json();
+      const raw = data.result || data.entries || data || [];
+      return this._cacheTreeResult(path, Array.isArray(raw) ? raw : [], opts);
+    }
+
+    _cacheTreeResult(rootPath, raw, opts) {
+      rootPath = Path.normalize(rootPath);
+      const entries = raw.map((e) => this._normalize(e, rootPath));
+      const groups = new Map();
+      for (const entry of entries) {
+        this._rememberStat(entry);
+        if (entry.type === 'directory' && usableSummary(entry.abstract)) {
+          this._rememberContent(entry.path, 'l0', entry.abstract, { source: 'tree' });
+        } else if (entry.type === 'directory' && typeof entry.abstract === 'string' && isSummaryPlaceholder(entry.abstract)) {
+          this._rememberContent(entry.path, 'l0', '', { source: 'tree', negative: true });
+        }
+        const parent = Path.dirname(entry.path);
+        const current = groups.get(parent) || [];
+        current.push(entry);
+        groups.set(parent, current);
+      }
+
+      const partialParents = new Set();
+      if (raw.length >= opts.nodeLimit && entries.length) {
+        let p = Path.dirname(entries[entries.length - 1].path);
+        for (const a of Path.ancestors(p)) {
+          if (rootPath === '/' || a === rootPath || a.startsWith(rootPath + '/')) partialParents.add(a);
+        }
+        partialParents.add(rootPath);
+      }
+
+      if (!groups.has(rootPath)) this._rememberList(rootPath, [], { source: 'tree' });
+      for (const [parent, children] of groups) {
+        if (rootPath !== '/' && parent !== rootPath && !parent.startsWith(rootPath + '/')) continue;
+        this._rememberList(parent, children, {
+          source: 'tree',
+          partial: partialParents.has(parent),
+        });
+      }
+      return entries;
+    }
+
     /**
      * List a directory.
      * OpenViking response shape (per docs):
@@ -133,34 +307,51 @@
      * Some servers return { entries: [...] }. We accept both.
      */
     async list(path, opts = {}) {
+      path = Path.normalize(path);
       const refresh = truthyFlag(opts.refresh) || truthyFlag(opts.forceRefresh) || truthyFlag(opts.noCache);
       const cached = this._listCache.get(path);
-      if (!refresh && cached && cached.expires > Date.now()) return this._applyOpts(cached.entries, opts);
-      const uri = pathToUri(path) + (path.endsWith('/') || path === '/' ? '' : '/');
-      const url = `/api/v1/fs/ls?uri=${encodeURIComponent(uri)}`;
-      const res = await this._req(url, refresh ? { cache: 'no-store' } : {});
+      const now = Date.now();
+      const treePartial = cached?.partial && cached.source === 'tree';
+      if (!refresh && cached && cached.expires > now && !treePartial) {
+        this.prefetchTree(path).catch(() => {});
+        return this._applyOpts(cached.entries, opts);
+      }
+
+      const inflight = this._listInflight.get(path);
+      if (inflight) {
+        if (cached && cached.staleUntil > now) return this._applyOpts(cached.entries, opts);
+        return this._applyOpts(await inflight, opts);
+      }
+
+      const promise = this._fetchListDirect(path).finally(() => this._listInflight.delete(path));
+      this._listInflight.set(path, promise);
+      try {
+        return this._applyOpts(await promise, opts);
+      } catch (e) {
+        if (cached && cached.staleUntil > Date.now()) return this._applyOpts(cached.entries, opts);
+        throw e;
+      }
+    }
+
+    async _fetchListDirect(path) {
+      const uri = pathToDirectoryUri(path);
+      const url = '/api/v1/fs/ls?' + makeQuery({
+        uri,
+        output: 'agent',
+        node_limit: this.listNodeLimit,
+        abs_limit: LIST_ABS_LIMIT,
+        show_all_hidden: false,
+      });
+      const res = await this._req(url, { cache: 'no-store' });
       const data = await res.json();
       const raw = data.result || data.entries || data || [];
       const entries = (Array.isArray(raw) ? raw : []).map((e) => this._normalize(e, path));
-      // ls API may return time-only modTime (HH:MM:SS) without a date.
-      // Backfill full timestamps from stat API in parallel.
-      const needsStat = entries.filter((e) => e._mtimePartial);
-      if (needsStat.length) {
-        const results = await Promise.allSettled(
-          needsStat.map((e) => this._statDirect(e.path))
-        );
-        results.forEach((r, i) => {
-          if (r.status === 'fulfilled' && r.value) {
-            const e = needsStat[i];
-            e.mtime = r.value.mtime || e.mtime;
-            e.ctime = r.value.ctime || e.ctime;
-            delete e._mtimePartial;
-          }
-        });
-      }
-      this._listCache.set(path, { entries, expires: Date.now() + 5000 });
-      for (const e of entries) this._statCache.set(e.path, { value: e, expires: Date.now() + 5000 });
-      return this._applyOpts(entries, opts);
+      this._rememberList(path, entries, {
+        source: 'ls',
+        partial: entries.length >= this.listNodeLimit,
+      });
+      this.prefetchTree(path).catch(() => {});
+      return entries;
     }
 
     _applyOpts(entries, opts = {}) {
@@ -196,7 +387,7 @@
         else {
           const s = rawMtime.trim();
           if (/^\d{1,2}:\d{2}/.test(s)) {
-            // Time-only (UTC) — use as interim value, flag for stat backfill.
+            // Time-only (UTC) from ls/tree is good enough for a short-lived cache.
             const today = new Date().toISOString().slice(0, 10);
             mtime = Date.parse(today + 'T' + s + 'Z') || 0;
             mtimePartial = true;
@@ -220,6 +411,7 @@
         language: entry.language || det.language,
         hidden: name.startsWith('.') || name.startsWith('_'),
       };
+      if (typeof entry.abstract === 'string') out.abstract = entry.abstract;
       if (mtimePartial) out._mtimePartial = true;
       return out;
     }
@@ -249,57 +441,93 @@
     }
 
     async stat(path) {
+      path = Path.normalize(path);
       const cached = this._statCache.get(path);
       if (cached && cached.expires > Date.now()) return cached.value;
       if (path === '/') {
         const root = { path: '/', name: '/', type: 'directory', size: 0, mtime: 0, ctime: 0, mode: 0o555, hidden: false };
-        this._statCache.set(path, { value: root, expires: Date.now() + 60000 });
+        this._rememberStat(root);
         return root;
       }
 
+      const inflight = this._statInflight.get(path);
+      if (inflight) {
+        if (cached && cached.staleUntil > Date.now()) return cached.value;
+        return inflight;
+      }
+
       // Try stat API first for full timestamp, fall back to parent listing.
-      try {
+      const promise = (async () => {
         const direct = await this._statDirect(path);
         if (direct) {
-          this._statCache.set(path, { value: direct, expires: Date.now() + 5000 });
+          this._rememberStat(direct);
           return direct;
         }
+      })().finally(() => this._statInflight.delete(path));
+      this._statInflight.set(path, promise);
+
+      try {
+        const direct = await promise;
+        if (direct) return direct;
       } catch {}
-      const parent = Path.dirname(path);
-      const entries = await this.list(parent).catch(() => []);
-      const hit = entries.find((x) => x.path === path);
-      if (hit) return hit;
+      try {
+        const parent = Path.dirname(path);
+        const entries = await this.list(parent).catch(() => []);
+        const hit = entries.find((x) => x.path === path);
+        if (hit) return hit;
+      } catch {}
+      if (cached && cached.staleUntil > Date.now()) return cached.value;
       throw new FsError('ENOENT', 'Not found: ' + path, path);
     }
 
     async read(path, opts = {}) {
       const { maxBytes = 256 * 1024, encoding = 'utf-8', level = 'l2', isDirectory = false } = opts;
+      path = Path.normalize(path);
+      const cacheableLevel = level === 'l0' || level === 'l1';
+      const contentKey = this._contentKey(path, level);
+      const cached = cacheableLevel ? this._contentCache.get(contentKey) : null;
+      if (cached && cached.expires > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);
+      const inflight = cacheableLevel ? this._contentInflight.get(contentKey) : null;
+      if (inflight) {
+        if (cached && cached.staleUntil > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);
+        return inflight;
+      }
+
       let uri = pathToUri(path);
       if (isDirectory && uri !== VIKING_PROTOCOL && !uri.endsWith('/')) uri += '/';
       // OpenViking uses /api/v1/content/* for content reads.
       // level: 'l0' (abstract), 'l1' (overview), 'l2' (full content)
       const endpoint = level === 'l0' ? 'abstract' : level === 'l1' ? 'overview' : 'read';
-      const res = await this._req(`/api/v1/content/${endpoint}?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
-      const ct = res.headers.get('content-type') || '';
-      let content = '';
-      if (ct.includes('application/json')) {
-        const data = await res.json();
-        const r = data.result;
-        if (typeof r === 'string') content = r;
-        else if (r && typeof r === 'object') {
-          content = r.content ?? r.text ?? r.markdown ?? r.abstract ?? r.overview ?? r.summary ?? JSON.stringify(r, null, 2);
+      const readPromise = (async () => {
+        const res = await this._req(`/api/v1/content/${endpoint}?uri=${encodeURIComponent(uri)}`, { cache: 'no-store' });
+        const ct = res.headers.get('content-type') || '';
+        let content = '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          const r = data.result;
+          if (typeof r === 'string') content = r;
+          else if (r && typeof r === 'object') {
+            content = r.content ?? r.text ?? r.markdown ?? r.abstract ?? r.overview ?? r.summary ?? JSON.stringify(r, null, 2);
+          } else {
+            content = data.content ?? data.text ?? data.markdown ?? data.abstract ?? data.overview ?? data.summary ?? '';
+          }
         } else {
-          content = data.content ?? data.text ?? data.markdown ?? data.abstract ?? data.overview ?? data.summary ?? '';
+          content = await res.text();
         }
-      } else {
-        content = await res.text();
+        if (cacheableLevel) {
+          if (isSummaryPlaceholder(content)) content = '';
+          this._rememberContent(path, level, content, { negative: !content });
+        }
+        return this._chunkFromContent(content, maxBytes, encoding);
+      })();
+      const trackedRead = readPromise.finally(() => this._contentInflight.delete(contentKey));
+      if (cacheableLevel) this._contentInflight.set(contentKey, trackedRead);
+      try {
+        return await trackedRead;
+      } catch (e) {
+        if (cached && cached.staleUntil > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);
+        throw e;
       }
-      const truncated = content.length > maxBytes;
-      return {
-        content: truncated ? content.slice(0, maxBytes) : content,
-        encoding,
-        truncated,
-      };
     }
 
     async exists(path) {
@@ -442,6 +670,12 @@
     invalidate() {
       this._listCache.clear();
       this._statCache.clear();
+      this._contentCache.clear();
+      this._listInflight.clear();
+      this._statInflight.clear();
+      this._contentInflight.clear();
+      this._treeInflight.clear();
+      this._treeWarmCache.clear();
     }
   }
 

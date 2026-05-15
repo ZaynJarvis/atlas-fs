@@ -154,7 +154,7 @@ function useFsRead(fs, path) {
           if (typeof c !== 'string') continue;
           const t = c.trim();
           // OpenViking returns placeholder strings when overviews aren't generated yet.
-          if (t && !/^\[directory (overview|abstract) is not (generated|ready)\]$/i.test(t)) {
+          if (t && !/\[directory (overview|abstract) is not (generated|ready)\]/i.test(t)) {
             out[lv] = c;
           }
         }

@@ -37,11 +37,13 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
   const [trailReloadKey, setTrailReloadKey] = useS(0);
   useE(() => {
     let alive = true;
-    Promise.all(trail.map((p) => fs.list(p, { refresh: true }).catch(() => [])))
+    Promise.all(trail.map((p) => fs.list(p).catch(() => [])))
       .then((res) => {
         if (!alive) return;
         const next = {}; trail.forEach((p, i) => { next[p] = res[i]; });
         setRawCols(next);
+        const active = trail[trail.length - 1] || '/';
+        if (fs.prefetchTree) fs.prefetchTree(active).catch(() => {});
       });
     return () => { alive = false; };
   }, [fs, trail.join('|'), trailReloadKey]);
@@ -467,19 +469,8 @@ function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
   const listReqRef = useR(new Map());
   const loadingPathsRef = useR(new Set());
 
-  const preloadChildDirs = useCB((entries) => {
-    const dirs = (entries || []).filter((e) => e.type === 'directory');
-    for (const dir of dirs) {
-      fs.list(dir.path)
-        .then((children) => {
-          setChildCache((prev) => {
-            if (loadingPathsRef.current.has(dir.path)) return prev;
-            if (prev[dir.path]) return prev;
-            return { ...prev, [dir.path]: children };
-          });
-        })
-        .catch(() => {});
-    }
+  const preloadTree = useCB((path) => {
+    if (fs.prefetchTree) fs.prefetchTree(path).catch(() => {});
   }, [fs]);
 
   const loadChildren = useCB((path, opts = {}) => {
@@ -500,14 +491,14 @@ function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
         if (listReqRef.current.get(path) !== seq) return;
         setChildCache((prev) => ({ ...prev, [path]: children }));
         loadingPathsRef.current.delete(path);
-        if (preload) preloadChildDirs(children);
+        if (preload) preloadTree(path);
       })
       .catch(() => {
         if (listReqRef.current.get(path) !== seq) return;
         setChildCache((prev) => ({ ...prev, [path]: [] }));
         loadingPathsRef.current.delete(path);
       });
-  }, [fs, preloadChildDirs]);
+  }, [fs, preloadTree]);
 
   useE(() => {
     const fsChanged = prevFsRef.current !== fs;
@@ -515,7 +506,7 @@ function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
     const paths = [...expanded];
     const need = fsChanged ? paths : paths.filter((p) => !childCache[p]);
     if (!need.length) return;
-    Promise.all(need.map((p) => fs.list(p, { refresh: true }).then((c) => [p, c]).catch(() => [p, []])))
+    Promise.all(need.map((p) => fs.list(p).then((c) => [p, c]).catch(() => [p, []])))
       .then((pairs) => {
         setChildCache((prev) => {
           const next = fsChanged ? {} : { ...prev };
@@ -524,7 +515,7 @@ function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
           }
           return next;
         });
-        for (const [, c] of pairs) preloadChildDirs(c);
+        for (const [p] of pairs) preloadTree(p);
       });
   }, [fs]);
 
@@ -537,7 +528,7 @@ function TreeView({ fs, selection, setSelection, onSearchScopeChange }) {
       if (prev.has(p)) return prev;
       return new Set([...prev, p]);
     });
-    loadChildren(p, { refresh: true, clear: true, preload: true });
+    loadChildren(p, { preload: true });
   }, [loadChildren]);
 
   const closeDirectory = useCB((p) => {
@@ -686,7 +677,7 @@ function DualPaneView({ fs, selection, setSelection }) {
   const Pane = ({ side }) => {
     const path = dual[side];
     const sel = dual[side + 'Sel'];
-    const { entries } = useFsList(fs, path, { sortBy: 'name', refresh: true });
+    const { entries } = useFsList(fs, path, { sortBy: 'name' });
     const totalSize = (entries || []).reduce((a, b) => a + (b.type === 'file' ? b.size : 0), 0);
     return (
       <div className="dual-pane" data-active={dual.active === side} onClick={() => setDual({ active: side })}>
