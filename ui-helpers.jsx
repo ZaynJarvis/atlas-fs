@@ -142,25 +142,37 @@ function useFsRead(fs, path) {
     (async () => {
       try {
         const s = await fs.stat(path);
-        const levels = s?.type === 'directory' ? (path === '/' ? [] : ['l0']) : ['l2'];
         const out = emptyBundle();
-        for (let i = 0; i < levels.length; i++) {
-          const lv = levels[i];
+        const readLevel = async (lv) => {
           let c = null;
           try {
             const r = await fs.read(path, { level: lv, isDirectory: s?.type === 'directory' });
             c = r?.content ?? null;
           } catch {}
-          if (typeof c !== 'string') continue;
+          if (typeof c !== 'string') return;
           const t = c.trim();
           // OpenViking returns placeholder strings when overviews aren't generated yet.
           if (t && !/\[directory (overview|abstract) is not (generated|ready)\]/i.test(t)) {
             out[lv] = c;
           }
+        };
+        if (s?.type === 'directory') {
+          if (!cancelled) setStat(s);
+          if (path !== '/') {
+            await readLevel('l0');
+            if (!cancelled) setBundle({ ...out });
+            await new Promise((resolve) => setTimeout(resolve, 350));
+            if (!cancelled) {
+              await readLevel('l1');
+              if (!cancelled) setBundle({ ...out });
+            }
+          }
+        } else {
+          await readLevel('l2');
+          if (cancelled) return;
+          setStat(s);
+          setBundle(out);
         }
-        if (cancelled) return;
-        setStat(s);
-        setBundle(out);
       } catch (e) {
         if (!cancelled) setError(e);
       } finally {
