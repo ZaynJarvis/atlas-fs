@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atlas-pwa-v15';
+const CACHE_NAME = 'atlas-pwa-v16';
 const CDN_ORIGINS = new Set(['https://unpkg.com']);
 const APP_SHELL = [
   './Atlas.html',
@@ -12,7 +12,7 @@ const APP_SHELL = [
   './tweaks-panel.jsx',
   './renderers.jsx?v=12',
   './ui-helpers.jsx?v=12',
-  './views.jsx?v=14',
+  './views.jsx?v=15',
   './search-overlay.jsx?v=11',
   './manifest.webmanifest',
   './atlas-icon.svg',

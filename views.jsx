@@ -254,19 +254,23 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [selectedPath, trail.length]);
 
-  const onColumnsWheel = (e) => {
+  useE(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const delta = e.deltaX || (e.shiftKey ? e.deltaY : 0);
-    if (!delta) return;
-    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
-    if (!maxScroll) return;
-    const next = Math.max(0, Math.min(maxScroll, el.scrollLeft + delta));
-    if (next === el.scrollLeft) return;
-    el.scrollLeft = next;
-    lastScrollRef.current = next;
-    e.preventDefault();
-  };
+    const onWheel = (e) => {
+      const delta = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+      if (!delta) return;
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      if (!maxScroll) return;
+      const next = Math.max(0, Math.min(maxScroll, el.scrollLeft + delta));
+      if (next === el.scrollLeft) return;
+      if (e.cancelable) e.preventDefault();
+      el.scrollLeft = next;
+      lastScrollRef.current = next;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   return (
     <div className="view-columns" ref={wrapRef}>
@@ -274,7 +278,6 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
         className="columns-scroll scroll"
         ref={scrollRef}
         onScroll={(e) => { lastScrollRef.current = e.currentTarget.scrollLeft; }}
-        onWheel={onColumnsWheel}
       >
         <div className="columns-inner" ref={innerRef}>
         {trail.map((path, i) => {
