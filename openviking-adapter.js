@@ -70,6 +70,61 @@
     return typeof text === 'string' && text.trim() && !isSummaryPlaceholder(text);
   }
 
+  function firstString(...values) {
+    for (const value of values) {
+      if (typeof value === 'string') return value;
+    }
+    return null;
+  }
+
+  function truthyLevelFlag(value) {
+    if (value == null) return null;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      if (!v) return false;
+      if (['true', 'ready', 'available', 'generated', '1', 'yes'].includes(v)) return true;
+      if (['false', 'not_ready', 'unavailable', 'missing', '0', 'no'].includes(v)) return false;
+    }
+    return null;
+  }
+
+  function levelListed(entry, level) {
+    const wanted = level.toLowerCase();
+    const values = [
+      entry.levels,
+      entry.availableLevels,
+      entry.available_levels,
+      entry.summaryLevels,
+      entry.summary_levels,
+    ];
+    for (const value of values) {
+      if (Array.isArray(value)) return value.map((v) => String(v).toLowerCase()).includes(wanted);
+      if (value && typeof value === 'object') {
+        const raw = value[level] ?? value[level.toUpperCase()] ?? value[wanted] ?? value[wanted.toUpperCase()];
+        const flag = truthyLevelFlag(raw);
+        if (flag != null) return flag;
+      }
+    }
+    return null;
+  }
+
+  function inferPreviewLevels(entry) {
+    const abstract = firstString(entry.abstract, entry.l0, entry.L0, entry.summary);
+    const overview = firstString(entry.overview, entry.l1, entry.L1);
+    const l0 = usableSummary(abstract)
+      || truthyLevelFlag(entry.hasAbstract ?? entry.has_abstract ?? entry.abstractReady ?? entry.abstract_ready) === true
+      || levelListed(entry, 'l0') === true;
+    const explicitL1 = truthyLevelFlag(entry.hasOverview ?? entry.has_overview ?? entry.overviewReady ?? entry.overview_ready);
+    const listedL1 = levelListed(entry, 'l1');
+    const l1 = usableSummary(overview)
+      || explicitL1 === true
+      || listedL1 === true
+      || (explicitL1 == null && listedL1 == null && usableSummary(abstract));
+    return { l0, l1 };
+  }
+
   function mapStatusToErrCode(status) {
     if (status === 404) return 'ENOENT';
     if (status === 403 || status === 401) return 'EACCES';
@@ -174,7 +229,9 @@
 
     _rememberStat(entry, ttl = CACHE_TTL_MS) {
       if (!entry?.path) return;
-      this._statCache.set(entry.path, { value: entry, ...this._cacheWindow(ttl) });
+      const existing = this._statCache.get(entry.path)?.value;
+      const value = existing ? { ...existing, ...entry, _levels: { ...(existing._levels || {}), ...(entry._levels || {}) } } : entry;
+      this._statCache.set(entry.path, { value, ...this._cacheWindow(ttl) });
     }
 
     _rememberList(path, entries, opts = {}) {
@@ -198,6 +255,11 @@
         } else if (e.type === 'directory' && typeof e.abstract === 'string' && isSummaryPlaceholder(e.abstract)) {
           this._rememberContent(e.path, 'l0', '', { source: opts.source || 'ls', negative: true });
         }
+        if (e.type === 'directory' && usableSummary(e.overview)) {
+          this._rememberContent(e.path, 'l1', e.overview, { source: opts.source || 'ls' });
+        } else if (e.type === 'directory' && typeof e.overview === 'string' && isSummaryPlaceholder(e.overview)) {
+          this._rememberContent(e.path, 'l1', '', { source: opts.source || 'ls', negative: true });
+        }
       }
       return entries;
     }
@@ -219,6 +281,15 @@
       const text = content || '';
       const truncated = text.length > maxBytes;
       return { content: truncated ? text.slice(0, maxBytes) : text, encoding, truncated };
+    }
+
+    hasPreviewLevel(path, level) {
+      path = Path.normalize(path);
+      const cached = this._contentCache.get(this._contentKey(path, level));
+      if (cached && cached.staleUntil > Date.now()) return !cached.negative && !!cached.content;
+      const stat = this._statCache.get(path)?.value;
+      if (stat?._levels && level in stat._levels) return !!stat._levels[level];
+      return false;
     }
 
     async prefetchTree(path = '/', opts = {}) {
@@ -409,7 +480,11 @@
         language: entry.language || det.language,
         hidden: name.startsWith('.') || name.startsWith('_'),
       };
-      if (typeof entry.abstract === 'string') out.abstract = entry.abstract;
+      const abstract = firstString(entry.abstract, entry.l0, entry.L0, entry.summary);
+      const overview = firstString(entry.overview, entry.l1, entry.L1);
+      if (typeof abstract === 'string') out.abstract = abstract;
+      if (typeof overview === 'string') out.overview = overview;
+      if (isDir) out._levels = inferPreviewLevels(entry);
       if (mtimePartial) out._mtimePartial = true;
       return out;
     }

@@ -161,8 +161,9 @@ function useFsRead(fs, path) {
           if (path !== '/') {
             await readLevel('l0');
             if (!cancelled) setBundle({ ...out });
-            await new Promise((resolve) => setTimeout(resolve, 350));
-            if (!cancelled) {
+            if (!fs.hasPreviewLevel || fs.hasPreviewLevel(path, 'l1')) {
+              await new Promise((resolve) => setTimeout(resolve, 350));
+              if (cancelled) return;
               await readLevel('l1');
               if (!cancelled) setBundle({ ...out });
             }
