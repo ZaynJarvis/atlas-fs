@@ -23,18 +23,18 @@
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js?v=16').catch(() => {});
+    navigator.serviceWorker.register('./sw.js?v=18').catch(() => {});
   });
 }
 </script>
 
 <script src="fs-api.js"></script>
 <script src="mock-data.js"></script>
-<script src="openviking-adapter.js?v=14"></script>
+<script src="openviking-adapter.js?v=16"></script>
 <script type="text/babel" src="tweaks-panel.jsx"></script>
 <script type="text/babel" src="renderers.jsx?v=12"></script>
-<script type="text/babel" src="ui-helpers.jsx?v=12"></script>
-<script type="text/babel" src="views.jsx?v=15"></script>
+<script type="text/babel" src="ui-helpers.jsx?v=13"></script>
+<script type="text/babel" src="views.jsx?v=16"></script>
 <script type="text/babel" src="search-overlay.jsx?v=11"></script>
 </head>
 <body>
@@ -84,7 +84,7 @@ function App() {
       const saved = localStorage.getItem('atlas-sort');
       if (saved) { const s = JSON.parse(saved); sortBy = s.sortBy || 'name'; sortDir = s.sortDir || 'asc'; }
     } catch {}
-    return { trail: ['/'], dir: '/', file: '/README.md', sortBy, sortDir, focus: null };
+    return { trail: ['/'], dir: '/', file: null, sortBy, sortDir, focus: null };
   });
 
   // Build the FS — switches based on backend tweak

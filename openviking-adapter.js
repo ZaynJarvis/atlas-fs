@@ -313,7 +313,6 @@
       const now = Date.now();
       const treePartial = cached?.partial && cached.source === 'tree';
       if (!refresh && cached && cached.expires > now && !treePartial) {
-        this.prefetchTree(path).catch(() => {});
         return this._applyOpts(cached.entries, opts);
       }
 
@@ -350,7 +349,6 @@
         source: 'ls',
         partial: entries.length >= this.listNodeLimit,
       });
-      this.prefetchTree(path).catch(() => {});
       return entries;
     }
 
@@ -444,6 +442,7 @@
       path = Path.normalize(path);
       const cached = this._statCache.get(path);
       if (cached && cached.expires > Date.now()) return cached.value;
+      if (cached && cached.staleUntil > Date.now()) return cached.value;
       if (path === '/') {
         const root = { path: '/', name: '/', type: 'directory', size: 0, mtime: 0, ctime: 0, mode: 0o555, hidden: false };
         this._rememberStat(root);
@@ -486,7 +485,7 @@
       const cacheableLevel = level === 'l0' || level === 'l1';
       const contentKey = this._contentKey(path, level);
       const cached = cacheableLevel ? this._contentCache.get(contentKey) : null;
-      if (cached && cached.expires > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);
+      if (cached && cached.staleUntil > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);
       const inflight = cacheableLevel ? this._contentInflight.get(contentKey) : null;
       if (inflight) {
         if (cached && cached.staleUntil > Date.now()) return this._chunkFromContent(cached.content, maxBytes, encoding);

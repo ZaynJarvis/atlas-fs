@@ -142,7 +142,7 @@ function useFsRead(fs, path) {
     (async () => {
       try {
         const s = await fs.stat(path);
-        const levels = s?.type === 'directory' ? ['l0', 'l1'] : ['l2'];
+        const levels = s?.type === 'directory' ? (path === '/' ? [] : ['l0']) : ['l2'];
         const out = emptyBundle();
         for (let i = 0; i < levels.length; i++) {
           const lv = levels[i];

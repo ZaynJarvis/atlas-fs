@@ -35,14 +35,21 @@ function ColumnsView({ fs, selection, setSelection, onSearchScopeChange }) {
   const lastScrollRef = useR(0);
   const pendingTrailAnimRef = useR(null);
   const [trailReloadKey, setTrailReloadKey] = useS(0);
+  const prevFsForLoadRef = useR(fs);
   useE(() => {
     let alive = true;
-    Promise.all(trail.map((p) => fs.list(p).catch(() => [])))
-      .then((res) => {
+    const fsChanged = prevFsForLoadRef.current !== fs;
+    prevFsForLoadRef.current = fs;
+    const active = trail[trail.length - 1] || '/';
+    const paths = fsChanged ? trail : trail.filter((p) => p === active || !rawCols[p]);
+    Promise.all(paths.map((p) => fs.list(p).then((entries) => [p, entries]).catch(() => [p, []])))
+      .then((pairs) => {
         if (!alive) return;
-        const next = {}; trail.forEach((p, i) => { next[p] = res[i]; });
-        setRawCols(next);
-        const active = trail[trail.length - 1] || '/';
+        setRawCols((prev) => {
+          const next = fsChanged ? {} : { ...prev };
+          for (const [p, entries] of pairs) next[p] = entries;
+          return next;
+        });
         if (fs.prefetchTree) fs.prefetchTree(active).catch(() => {});
       });
     return () => { alive = false; };
