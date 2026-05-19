@@ -554,7 +554,10 @@ function JsonlRawView({ records }) {
 
 function JsonlRenderer({ text }) {
   const [dialogMode, setDialogMode] = useState(true);
-  const [showTools, setShowTools] = useState(false);
+  const [showTools, setShowTools] = useState(() => {
+    const stored = localStorage.getItem('atlas-jsonl-toolcall');
+    return stored === null ? true : stored === 'true';
+  });
   const records = useMemo(() => parseJsonlRecords(text), [text]);
   const hasTools = useMemo(() => records.some((r) => {
     const msg = getJsonlMessage(r);
@@ -571,11 +574,11 @@ function JsonlRenderer({ text }) {
         <div className="jsonl-meta-controls">
           {dialogMode && hasTools && (
             <label className="jsonl-mode-switch" title="Show tool calls and results">
-              <span className="jsonl-mode-label">{showTools ? 'Tools' : 'Tools'}</span>
+              <span className="jsonl-mode-label">toolcall</span>
               <input
                 type="checkbox"
                 checked={showTools}
-                onChange={(e) => setShowTools(e.target.checked)}
+                onChange={(e) => { setShowTools(e.target.checked); localStorage.setItem('atlas-jsonl-toolcall', e.target.checked); }}
                 aria-label="Show tool calls"
               />
               <span className="jsonl-switch-track" aria-hidden="true"></span>
