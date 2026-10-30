@@ -60,3 +60,19 @@ This repo includes `.github/workflows/pages.yml`. After pushing to `main`:
 3. Wait for the **Deploy to Pages** action to finish — your site is at `https://USERNAME.github.io/REPO/`
 
 The workflow publishes the repo root as-is (it's already a static site) and rewrites `index.html` → `Atlas.html` so the bare URL works.
+
+## Studio edition (`studio/`)
+
+A rebuild of Atlas on OpenViking Studio's UI stack: Studio's design tokens and base layer
+(`web-studio/src/styles.css`), its base-ui/shadcn components (`button`, `tabs`, `dialog`, `input`,
+`badge`, `switch`, `tooltip`, `separator`), Noto Sans, lucide icons, and the Miller-column look of
+Studio's `resources/-components/item-column.tsx`. The Atlas data layer (`fs-api.js`,
+`openviking-adapter.js`) and content renderers (markdown / JSON / JSONL) are reused unchanged.
+
+```sh
+cd studio && npm install --include=dev && npm run build
+HOST=0.0.0.0 PORT=8790 node server.mjs   # reads ~/.openviking/ovcli.conf (or OVCLI_CONF)
+```
+
+`server.mjs` serves `dist/` and an allowlisted, read-only proxy at `/ov-api`; the API key stays in
+the server process.
