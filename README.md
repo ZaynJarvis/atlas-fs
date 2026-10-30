@@ -63,7 +63,7 @@ The workflow publishes the repo root as-is (it's already a static site) and rewr
 
 ## Studio edition (`studio/`)
 
-A rebuild of Atlas on OpenViking Studio's UI stack: Studio's design tokens and base layer
+A tree-only rebuild of Atlas, branded OpenViking, on OpenViking Studio's UI stack: Studio's design tokens and base layer
 (`web-studio/src/styles.css`), its base-ui/shadcn components (`button`, `tabs`, `dialog`, `input`,
 `badge`, `switch`, `tooltip`, `separator`), Noto Sans, lucide icons, and the Miller-column look of
 Studio's `resources/-components/item-column.tsx`. The Atlas data layer (`fs-api.js`,

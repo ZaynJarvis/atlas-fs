@@ -1,12 +1,14 @@
-// Atlas on OpenViking Studio's component library (base-ui + Tailwind, Studio tokens).
+// OpenViking file navigator (Atlas features) on OpenViking Studio's component library (base-ui + Tailwind, Studio tokens).
 // Data layer is the original Atlas adapter (window.FS.OpenVikingFs) talking to /ov-api, a
 // server-side proxy that holds the API key.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownAZ, ChevronRight, Clock, Copy, FilePlus2, FileText, Folder, FolderOpen, Link2, Monitor,
-  Moon, Search, Settings, Sun, Columns3, ListTree, Database, Loader2,
+  Moon, Search, Settings, Sun, Database, Loader2,
 } from 'lucide-react';
 import { cn } from '#/lib/utils';
+import logoLight from './assets/brand-lockup-light.svg';
+import logoDark from './assets/brand-lockup-dark.svg';
 import { Button } from '#/components/ui/button';
 import { Badge } from '#/components/ui/badge';
 import { Input } from '#/components/ui/input';
@@ -21,7 +23,7 @@ const R = () => window.AtlasRenderers;
 
 // ---------------------------------------------------------------- preferences + theme
 const PREFS_KEY = 'atlas-studio-prefs';
-const DEFAULT_PREFS = { theme: 'system', view: 'columns', sortBy: 'name', showHidden: false };
+const DEFAULT_PREFS = { theme: 'system', sortBy: 'name', showHidden: false };
 function usePrefs() {
   const [prefs, setPrefs] = useState(() => {
     try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return DEFAULT_PREFS; }
@@ -104,116 +106,6 @@ function IconTip({ label, children }) {
       <TooltipTrigger render={children} />
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-// ---------------------------------------------------------------- Miller columns (Studio ItemColumn)
-function ItemColumn({ fs, path, activePath, prefs, onSelect, className }) {
-  const { entries, error } = useList(fs, path, prefs.sortBy, prefs.showHidden);
-  const { isScrolling, onScroll } = useTransientScrollbar();
-  const label = path === '/' ? 'viking://' : FS().Path.basename(path);
-  const ref = useRef();
-  useEffect(() => {
-    ref.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [activePath, entries]);
-  return (
-    <div className={cn('flex w-60 min-w-60 flex-col overflow-hidden border-r', className)}>
-      <div className="flex min-h-11 items-center gap-1.5 border-b bg-blue-500/8 px-3 py-2 backdrop-blur-sm">
-        <Folder className="size-3.5 text-blue-600/75 dark:text-blue-300/75" />
-        <span className="truncate text-sm font-semibold text-blue-700/90 dark:text-blue-200">{label}</span>
-        {entries && <span className="ml-auto text-xs tabular-nums text-muted-foreground">{entries.length}</span>}
-      </div>
-      <div ref={ref} className="scrollbar-fade min-h-0 flex-1 overflow-y-auto overscroll-contain" data-scrolling={isScrolling || undefined} onScroll={onScroll}>
-        {!entries ? (
-          <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading…</div>
-        ) : error ? (
-          <div className="px-3 py-3 text-xs text-destructive">{error.message || String(error)}</div>
-        ) : entries.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-6 py-10">
-            <div className="max-w-[13rem] text-center">
-              <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground/70 shadow-inner"><Folder className="size-4" /></div>
-              <p className="text-sm font-medium text-foreground/70">Empty folder</p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground/75">Nothing stored here yet.</p>
-            </div>
-          </div>
-        ) : entries.map((entry) => {
-          const isActive = activePath === entry.path;
-          const isDir = entry.type === 'directory';
-          return (
-            <button
-              key={entry.path}
-              type="button"
-              data-active={isActive}
-              className={cn(
-                'group relative flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left text-sm transition-colors',
-                isActive ? 'bg-primary/8 text-foreground' : 'text-foreground/80 hover:bg-muted/35',
-              )}
-              onClick={() => onSelect(entry)}
-            >
-              {isActive && <span className="absolute inset-y-1 left-0 w-0.5 rounded-r bg-primary" />}
-              {isDir
-                ? <Folder className={cn('size-3.5 shrink-0', isActive ? 'text-primary/80' : 'text-muted-foreground')} />
-                : <FileText className={cn('size-3.5 shrink-0', isActive ? 'text-blue-600/75 dark:text-blue-300/75' : 'text-muted-foreground/65')} />}
-              <span className="truncate font-medium">{entry.name}</span>
-              {isDir && <ChevronRight className="ml-auto size-3 shrink-0 text-muted-foreground/45 transition-transform group-hover:translate-x-0.5" />}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ColumnsView({ fs, sel, setSel, prefs }) {
-  // Columns: root + every directory on the trail of the focused path.
-  const focus = sel.file || sel.dir;
-  const dirs = useMemo(() => {
-    const anc = FS().Path.ancestors(sel.dir); // ['/', '/a', '/a/b']
-    return anc.length ? anc : ['/'];
-  }, [sel.dir]);
-  const scroller = useRef();
-  useEffect(() => { scroller.current?.scrollTo({ left: scroller.current.scrollWidth, behavior: 'smooth' }); }, [dirs.length]);
-  const pick = (entry) => {
-    if (entry.type === 'directory') setSel({ dir: entry.path, file: null });
-    else setSel({ dir: FS().Path.dirname(entry.path), file: entry.path });
-  };
-
-  // Keyboard: up/down within the focused column, left/right across columns.
-  useEffect(() => {
-    const onKey = async (e) => {
-      const t = e.target;
-      if (t.closest?.('input, textarea, [role="dialog"]')) return;
-      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-      e.preventDefault();
-      const P = FS().Path;
-      if (e.key === 'ArrowLeft') {
-        if (focus !== '/') setSel({ dir: P.dirname(focus), file: null });
-        return;
-      }
-      if (e.key === 'ArrowRight') {
-        if (!sel.file) {
-          const kids = sortEntries(await fs.list(sel.dir), prefs.sortBy, prefs.showHidden);
-          if (kids[0]) pick(kids[0]);
-        }
-        return;
-      }
-      if (focus === '/') return;
-      const list = sortEntries(await fs.list(P.dirname(focus)), prefs.sortBy, prefs.showHidden);
-      const idx = list.findIndex((x) => x.path === focus);
-      const next = list[Math.max(0, Math.min(list.length - 1, idx + (e.key === 'ArrowDown' ? 1 : -1)))];
-      if (next) pick(next);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
-
-  return (
-    <div ref={scroller} className="scrollbar-fade flex h-full min-w-0 overflow-x-auto">
-      {dirs.map((d, i) => (
-        <ItemColumn key={d} fs={fs} path={d} prefs={prefs} onSelect={pick}
-          activePath={i < dirs.length - 1 ? dirs[i + 1] : sel.file} />
-      ))}
-    </div>
   );
 }
 
@@ -477,7 +369,7 @@ function SettingsDialog({ open, onOpenChange, prefs, setPref }) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Atlas view preferences. The OpenViking connection is configured on the server.</DialogDescription>
+          <DialogDescription>View preferences. The OpenViking connection is configured on the server.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 text-sm">
           <Row label="Theme">
@@ -561,7 +453,6 @@ export function App() {
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'f')) { e.preventDefault(); setSearchOpen(true); }
-      if ((e.metaKey || e.ctrlKey) && (e.key === '1' || e.key === '2')) { e.preventDefault(); setPref('view', e.key === '1' ? 'columns' : 'tree'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -583,17 +474,10 @@ export function App() {
     <TooltipProvider delay={300}>
       <div className="flex h-full flex-col bg-background text-foreground">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-          <div className="mr-1 flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Database className="size-4" /></div>
-            <span className="text-sm font-semibold">Atlas</span>
-            <span className="hidden text-xs text-muted-foreground sm:inline">OpenViking</span>
+          <div className="mr-2 flex items-center">
+            <img src={logoLight} alt="OpenViking" className="h-5 w-auto dark:hidden" />
+            <img src={logoDark} alt="OpenViking" className="hidden h-5 w-auto dark:block" />
           </div>
-          <Tabs value={prefs.view} onValueChange={(v) => setPref('view', v)}>
-            <TabsList className="h-8">
-              <TabsTrigger value="columns" className="px-2.5 text-xs"><Columns3 />Columns</TabsTrigger>
-              <TabsTrigger value="tree" className="px-2.5 text-xs"><ListTree />Tree</TabsTrigger>
-            </TabsList>
-          </Tabs>
           <Button variant="outline" size="sm" className="ml-2 hidden w-56 justify-start text-muted-foreground md:inline-flex" onClick={() => setSearchOpen(true)}>
             <Search />Search…<span className="ml-auto"><Kbd>⌘K</Kbd></span>
           </Button>
@@ -641,12 +525,10 @@ export function App() {
             <div className="flex-1"><EmptyPane icon={Loader2} spin title="Connecting…" /></div>
           ) : (
             <>
-              <section className={cn('min-w-0 border-r', prefs.view === 'tree' ? 'w-80 shrink-0' : 'flex-1')}>
-                {prefs.view === 'tree'
-                  ? <TreeView fs={fs} sel={sel} setSel={setSel} prefs={prefs} />
-                  : <ColumnsView fs={fs} sel={sel} setSel={setSel} prefs={prefs} />}
+              <section className="w-80 min-w-0 shrink-0 border-r">
+                <TreeView fs={fs} sel={sel} setSel={setSel} prefs={prefs} />
               </section>
-              <section className={cn('min-w-0', prefs.view === 'tree' ? 'flex-1' : 'w-[44%] max-w-3xl shrink-0')}>
+              <section className="min-w-0 flex-1">
                 <PreviewPane fs={fs} path={focus} />
               </section>
             </>
@@ -656,7 +538,7 @@ export function App() {
         <footer className="flex h-7 shrink-0 items-center gap-3 border-t bg-muted/30 px-3 text-[11px] text-muted-foreground">
           <span className={cn('size-1.5 rounded-full', conn.status === 'connected' ? 'bg-success' : conn.status === 'error' ? 'bg-destructive' : 'bg-warning')} />
           <span>{conn.status}</span>
-          <span className="ml-auto hidden gap-3 sm:flex"><span><Kbd>⌘K</Kbd> search</span><span><Kbd>⌘1</Kbd><Kbd>⌘2</Kbd> view</span><span><Kbd>←</Kbd><Kbd>→</Kbd> navigate</span></span>
+          <span className="ml-auto hidden gap-3 sm:flex"><span><Kbd>⌘K</Kbd> search</span></span>
         </footer>
 
         <SearchDialog fs={fs} open={searchOpen} onOpenChange={setSearchOpen} scope={sel.dir} onPick={pickPath} />
