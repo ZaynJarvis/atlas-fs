@@ -36,6 +36,17 @@ function usePrefs() {
   return [prefs, set];
 }
 
+function useMediaQuery(q) {
+  const query = useMemo(() => window.matchMedia(q), [q]);
+  const [match, setMatch] = useState(query.matches);
+  useEffect(() => {
+    const on = () => setMatch(query.matches);
+    query.addEventListener('change', on);
+    return () => query.removeEventListener('change', on);
+  }, [query]);
+  return match;
+}
+
 function useResolvedTheme(mode) {
   const query = useMemo(() => window.matchMedia('(prefers-color-scheme: dark)'), []);
   const [systemDark, setSystemDark] = useState(query.matches);
@@ -360,16 +371,99 @@ function Kbd({ children }) {
   return <kbd className="mr-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-sm border bg-muted px-1 font-sans text-[11px] text-muted-foreground">{children}</kbd>;
 }
 
+
+// ---------------------------------------------------------------- Connection (stored server-side)
+async function api(path, init) {
+  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...init });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+function ConnectionForm({ onSaved, submitLabel = 'Save' }) {
+  const [form, setForm] = useState({ baseUrl: '', apiKey: '', account: '', user: '' });
+  const [hasKey, setHasKey] = useState(false);
+  const [status, setStatus] = useState(null); // { kind: 'ok'|'error'|'busy', text }
+  useEffect(() => {
+    api('ov/connection').then((c) => { setForm({ baseUrl: c.baseUrl, apiKey: '', account: c.account, user: c.user }); setHasKey(c.hasApiKey); })
+      .catch((e) => setStatus({ kind: 'error', text: e.message }));
+  }, []);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const test = async () => {
+    setStatus({ kind: 'busy', text: 'Testing…' });
+    try {
+      const r = await api('ov/test', { method: 'POST', body: JSON.stringify(form) });
+      setStatus(r.ok ? { kind: 'ok', text: 'Connected: health check and listing succeeded.' } : { kind: 'error', text: r.error });
+    } catch (e) { setStatus({ kind: 'error', text: e.message }); }
+  };
+  const save = async (e, extra = {}) => {
+    e?.preventDefault();
+    setStatus({ kind: 'busy', text: 'Saving…' });
+    try {
+      const c = await api('ov/connection', { method: 'PUT', body: JSON.stringify({ ...form, ...extra }) });
+      setHasKey(c.hasApiKey);
+      setForm((f) => ({ ...f, apiKey: '' }));
+      setStatus({ kind: 'ok', text: 'Saved.' });
+      onSaved?.();
+    } catch (err) { setStatus({ kind: 'error', text: err.message }); }
+  };
+  return (
+    <form className="grid gap-3" onSubmit={save}>
+      <div className="flex items-center gap-2 font-medium"><Database className="size-4 text-muted-foreground" />OpenViking connection</div>
+      <Field label="Server URL"><Input required value={form.baseUrl} onChange={set('baseUrl')} placeholder="https://your-openviking-server" /></Field>
+      <Field label="API key" hint={hasKey ? 'A key is saved on the server. Leave blank to keep it.' : 'Stored on the server only; never sent back to the browser.'}>
+        <div className="flex gap-2">
+          <Input type="password" autoComplete="off" value={form.apiKey} onChange={set('apiKey')} placeholder={hasKey ? '•••••••• (key saved)' : 'Paste API key'} />
+          {hasKey && <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => save(null, { clearApiKey: true, apiKey: '' })}>Clear</Button>}
+        </div>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Account (optional)"><Input value={form.account} onChange={set('account')} /></Field>
+        <Field label="User (optional)"><Input value={form.user} onChange={set('user')} /></Field>
+      </div>
+      {status && (
+        <div className={cn('rounded-md border px-3 py-2 text-xs', status.kind === 'error' ? 'border-destructive/40 bg-destructive/10 text-destructive' : status.kind === 'ok' ? 'border-success/40 bg-success/10 text-success' : 'text-muted-foreground')}>{status.text}</div>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={test} disabled={!form.baseUrl}>Test connection</Button>
+        <Button type="submit" size="sm" disabled={!form.baseUrl}>{submitLabel}</Button>
+      </div>
+    </form>
+  );
+}
+
+function Field({ label, hint, children }) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="text-foreground/80">{label}</span>
+      {children}
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </label>
+  );
+}
+
+function FirstRunDialog({ open, onSaved }) {
+  return (
+    <Dialog open={open}>
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Connect to OpenViking</DialogTitle>
+          <DialogDescription>Enter your OpenViking server. The API key is saved on this server (file mode 0600) and is never returned to the page.</DialogDescription>
+        </DialogHeader>
+        <ConnectionForm onSaved={onSaved} submitLabel="Save and connect" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------- Settings
-function SettingsDialog({ open, onOpenChange, prefs, setPref }) {
-  const [conn, setConn] = useState(null);
-  useEffect(() => { if (open) fetch('ov/connection').then((r) => r.json()).then(setConn).catch(() => setConn({ error: true })); }, [open]);
+function SettingsDialog({ open, onOpenChange, prefs, setPref, onSaved }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>View preferences. The OpenViking connection is configured on the server.</DialogDescription>
+          <DialogDescription>View preferences and the OpenViking connection.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 text-sm">
           <Row label="Theme">
@@ -391,13 +485,7 @@ function SettingsDialog({ open, onOpenChange, prefs, setPref }) {
           </Row>
           <Row label="Show hidden files"><Switch checked={prefs.showHidden} onCheckedChange={(v) => setPref('showHidden', v)} /></Row>
           <Separator />
-          <div className="grid gap-1.5">
-            <div className="flex items-center gap-2 font-medium"><Database className="size-4 text-muted-foreground" />OpenViking server</div>
-            <div className="rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs break-all text-muted-foreground">
-              {conn ? (conn.baseUrl || 'not configured') : 'Loading…'}
-            </div>
-            {conn && <p className="text-xs text-muted-foreground">API key {conn.hasApiKey ? 'stored on the server (never sent to the browser)' : 'not set'}.</p>}
-          </div>
+          <ConnectionForm onSaved={onSaved} />
         </div>
       </DialogContent>
     </Dialog>
@@ -436,17 +524,38 @@ function useAddToChat(fs, sel) {
 export function App() {
   const [prefs, setPref] = usePrefs();
   const theme = useResolvedTheme(prefs.theme);
-  const fs = useMemo(() => new window.FS.OpenVikingFs({ url: 'ov-api' }), []);
+  const [connVersion, setConnVersion] = useState(0);
+  const [firstRun, setFirstRun] = useState(false);
+  const fs = useMemo(() => new window.FS.OpenVikingFs({ url: 'ov-api' }), [connVersion]);
   const [conn, setConn] = useState({ status: 'connecting', error: null });
   const [sel, setSelRaw] = useState({ dir: '/', file: null });
   const setSel = useCallback((s) => setSelRaw({ dir: s.dir, file: s.file }), []);
+  // Narrow windows (side panel): tree on top, preview below, with a draggable divider.
+  const narrow = useMediaQuery('(max-width: 719px)');
+  const mainRef = useRef();
+  const [split, setSplit] = useState(() => Number(localStorage.getItem('ov-studio-split')) || 42);
+  const startDrag = (e) => {
+    e.preventDefault();
+    const box = mainRef.current.getBoundingClientRect();
+    const move = (ev) => setSplit(Math.min(80, Math.max(15, ((ev.clientY - box.top) / box.height) * 100)));
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      setSplit((v) => { try { localStorage.setItem('ov-studio-split', String(Math.round(v))); } catch {} return v; });
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { note, send } = useAddToChat(fs, sel);
 
   useEffect(() => {
     (async () => {
-      try { if (fs.ping) await fs.ping(); await fs.list('/'); setConn({ status: 'connected', error: null }); }
+      setConn({ status: 'connecting', error: null });
+      try {
+        const c = await api('ov/connection');
+        if (!c.baseUrl) { setFirstRun(true); setConn({ status: 'not configured', error: 'Open settings to connect.' }); return; }
+        if (fs.ping) await fs.ping(); await fs.list('/'); setConn({ status: 'connected', error: null });
+      }
       catch (e) { setConn({ status: 'error', error: e.message || String(e) }); }
     })();
   }, [fs]);
@@ -494,10 +603,10 @@ export function App() {
             </IconTip>
             <Separator orientation="vertical" className="mx-1 h-5" />
             <IconTip label={`Copy ${FS().pathToUri(focus)}`}>
-              <Button variant="outline" size="sm" onClick={() => send(false)} aria-label="Add URI"><Link2 />URI</Button>
+              <Button variant="outline" size="sm" onClick={() => send(false)} aria-label="Add URI"><Link2 /><span className="hidden sm:inline">URI</span></Button>
             </IconTip>
             <IconTip label="Copy the selected file's content">
-              <Button variant="outline" size="sm" disabled={!sel.file} onClick={() => send(true)} aria-label="Add content"><FilePlus2 />Content</Button>
+              <Button variant="outline" size="sm" disabled={!sel.file} onClick={() => send(true)} aria-label="Add content"><FilePlus2 /><span className="hidden sm:inline">Content</span></Button>
             </IconTip>
             <IconTip label="Settings">
               <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings /></Button>
@@ -518,17 +627,23 @@ export function App() {
           <Button variant="ghost" size="icon-xs" className="ml-1" aria-label="Copy URI" onClick={() => navigator.clipboard?.writeText(FS().pathToUri(focus))}><Copy /></Button>
         </nav>
 
-        <main className="flex min-h-0 flex-1">
-          {conn.status === 'error' ? (
-            <div className="flex-1"><EmptyPane icon={Database} title="Cannot reach OpenViking" hint={conn.error} /></div>
+        <main ref={mainRef} className={cn('flex min-h-0 flex-1', narrow && 'flex-col')}>
+          {conn.status === 'error' || conn.status === 'not configured' ? (
+            <div className="flex-1"><div className="flex h-full flex-col items-center justify-center gap-3"><EmptyPane icon={Database} title={conn.status === 'not configured' ? 'Not connected' : 'Cannot reach OpenViking'} hint={conn.error} /><Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}><Settings />Connection settings</Button></div></div>
           ) : conn.status === 'connecting' ? (
             <div className="flex-1"><EmptyPane icon={Loader2} spin title="Connecting…" /></div>
           ) : (
             <>
-              <section className="w-80 min-w-0 shrink-0 border-r">
+              <section className={cn('min-w-0 shrink-0', narrow ? 'w-full' : 'w-80 border-r')} style={narrow ? { height: `${split}%` } : undefined}>
                 <TreeView fs={fs} sel={sel} setSel={setSel} prefs={prefs} />
               </section>
-              <section className="min-w-0 flex-1">
+              {narrow && (
+                <div role="separator" aria-orientation="horizontal" aria-label="Resize tree and preview" onPointerDown={startDrag}
+                  className="group relative h-2 shrink-0 cursor-row-resize touch-none border-y bg-muted/40 hover:bg-muted">
+                  <span className="absolute left-1/2 top-1/2 h-1 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted-foreground/30 group-hover:bg-muted-foreground/60" />
+                </div>
+              )}
+              <section className="min-h-0 min-w-0 flex-1">
                 <PreviewPane fs={fs} path={focus} />
               </section>
             </>
@@ -542,7 +657,8 @@ export function App() {
         </footer>
 
         <SearchDialog fs={fs} open={searchOpen} onOpenChange={setSearchOpen} scope={sel.dir} onPick={pickPath} />
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} prefs={prefs} setPref={setPref} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} prefs={prefs} setPref={setPref} onSaved={() => setConnVersion((v) => v + 1)} />
+        <FirstRunDialog open={firstRun} onSaved={() => { setFirstRun(false); setSel({ dir: '/', file: null }); setConnVersion((v) => v + 1); }} />
       </div>
     </TooltipProvider>
   );

@@ -71,8 +71,11 @@ Studio's `resources/-components/item-column.tsx`. The Atlas data layer (`fs-api.
 
 ```sh
 cd studio && npm install --include=dev && npm run build
-HOST=0.0.0.0 PORT=8790 node server.mjs   # reads ~/.openviking/ovcli.conf (or OVCLI_CONF)
+HOST=0.0.0.0 PORT=8790 node server.mjs   # DATA_DIR (default ~/.config/openviking-studio-web)
 ```
 
-`server.mjs` serves `dist/` and an allowlisted, read-only proxy at `/ov-api`; the API key stays in
-the server process.
+`server.mjs` serves `dist/` and an allowlisted, read-only proxy at `/ov-api`. The connection (URL,
+API key, account, user) is entered in the browser (first-run dialog or Settings), tested via
+`POST /ov/test`, and saved with `PUT /ov/connection` to `DATA_DIR/connection.json` (mode 0600). The
+key is never returned to the page. `~/.openviking/ovcli.conf` (or `OVCLI_CONF`) is only used as a
+default when nothing is saved.
