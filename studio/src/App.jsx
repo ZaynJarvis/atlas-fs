@@ -547,6 +547,7 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { note, send } = useAddToChat(fs, sel);
+  const hasBridge = Boolean(window.mcode?.miniapp?.message?.append);
 
   useEffect(() => {
     (async () => {
@@ -602,11 +603,11 @@ export function App() {
               <Button variant="ghost" size="icon-sm" aria-label="Change theme" onClick={() => setPref('theme', nextTheme)}><ThemeIcon /></Button>
             </IconTip>
             <Separator orientation="vertical" className="mx-1 h-5" />
-            <IconTip label={`Copy ${FS().pathToUri(focus)}`}>
-              <Button variant="outline" size="sm" onClick={() => send(false)} aria-label="Add URI"><Link2 /><span className="hidden sm:inline">URI</span></Button>
+            <IconTip label={`${hasBridge ? 'Add URI to chat input' : 'Copy URI'}: ${FS().pathToUri(focus)}`}>
+              <Button variant="outline" size="icon-sm" onClick={() => send(false)} aria-label="Add URI"><Link2 /></Button>
             </IconTip>
-            <IconTip label="Copy the selected file's content">
-              <Button variant="outline" size="sm" disabled={!sel.file} onClick={() => send(true)} aria-label="Add content"><FilePlus2 /><span className="hidden sm:inline">Content</span></Button>
+            <IconTip label={sel.file ? (hasBridge ? "Add the file's content to chat input" : "Copy the file's content") : 'Select a file to add its content'}>
+              <Button variant="outline" size="icon-sm" disabled={!sel.file} onClick={() => send(true)} aria-label="Add content"><FilePlus2 /></Button>
             </IconTip>
             <IconTip label="Settings">
               <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => setSettingsOpen(true)}><Settings /></Button>
